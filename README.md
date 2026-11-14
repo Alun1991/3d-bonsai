@@ -1,5 +1,5 @@
 # 床の間 — 富士桜盆栽 · Sakura Bonsai Diorama
-原版在这里：https://x.com/majidmanzarpour/status/2081103577590718865
+仿作，原版出处在这里：https://x.com/majidmanzarpour/status/2081103577590718865
 
 一盆富士桜（Prunus incisa 'Kojo-no-mai'）摆进一间床の間——全部由代码生成：树干、花、苔藓、花盆、光影，没有一个外部模型资产。单 HTML 文件，依赖仅 CDN 上的 three.js。
 
