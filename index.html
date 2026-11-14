@@ -360,8 +360,8 @@ const MOBILE = COARSE || /Android|iPhone|iPad|iPod|Mobile/i.test(UA);
 const CFG = {
   mobile: MOBILE,
   // counts that the governor is forbidden to touch
-  blossoms:      MOBILE ? 3200 : 6800,   // needle sprays — density is what makes a black-pine pad read as a pad
-  granules:      MOBILE ? 700  : 1500,
+  blossoms:      MOBILE ? 6000 : 12500,  // fuller pads again — the ref reads as solid green cushions
+  granules:      MOBILE ? 100  : 200,    // a sowing of pale pebbles, not a paved floor
   mossTufts:     MOBILE ? 900  : 2500,
   petalPool:     MOBILE ? 260  : 520,
   newLeaves:     0,
@@ -3313,7 +3313,7 @@ function buildFlowerGeometry(){
      is one mini-spray; a pad reads as dozens of them. ---------------------- */
   {
     const R = makeRand(31415);
-    const NN = 22;
+    const NN = 26;
     for (let k=0;k<NN;k++){
       const az0 = (k/NN)*TAU + R.range(-0.35, 0.35);
       const el  = R.range(0.25, 0.95);          // lean outward but stay up — pads, not sea urchins
@@ -3490,7 +3490,7 @@ function buildBlossoms(){
     q.setFromUnitVectors(up, s.dir);
     q2.setFromAxisAngle(s.dir, R.range(0,TAU));
     q.premultiply(q2);
-    const scale = R.range(0.70, 1.30);
+    const scale = R.range(0.78, 1.46);
     sc.set(scale, scale, scale);
     m.compose(s.pos, q, sc);
     mesh.setMatrixAt(i, m);
@@ -4151,12 +4151,14 @@ function buildSoilBed(){
 }
 
 function buildGranules(){
-  const base = new THREE.IcosahedronGeometry(1.0, 0);
+  /* river pebbles — smooth, rounded, warm: the bed should read as a sowing of
+     pebbles through the moss, not as a pile of akadama crumbs */
+  const base = new THREE.IcosahedronGeometry(1.0, 1);
   const p = base.attributes.position;
   const arr = p.array;
   for (let i=0;i<p.count;i++){
     const x=arr[i*3],y=arr[i*3+1],z=arr[i*3+2];
-    const k = 0.68 + 0.55*hash3i(Math.round(x*97),Math.round(y*97),Math.round(z*97));
+    const k = 0.90 + 0.20*hash3i(Math.round(x*97),Math.round(y*97),Math.round(z*97));
     arr[i*3]*=k; arr[i*3+1]*=k*0.86; arr[i*3+2]*=k;
   }
   base.computeVertexNormals();
@@ -4174,30 +4176,31 @@ function buildGranules(){
   const ext = new Float32Array(N*4);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(),
         e = new THREE.Euler(), s = new THREE.Vector3(), pv = new THREE.Vector3();
-  const aka=[0,0,0], aka2=[0,0,0], pum=[0,0,0], kir=[0,0,0];
-  hexToLinear(0x9a5a34, aka); hexToLinear(0x6d3a22, aka2);
-  hexToLinear(0xcfc9bb, pum); hexToLinear(0x726c60, kir);
+  const aka=[0,0,0], aka2=[0,0,0], pum=[0,0,0], tan=[0,0,0], kir=[0,0,0];
+  hexToLinear(0x9a6a4e, aka); hexToLinear(0x7b5440, aka2);
+  hexToLinear(0xd9d4c8, pum); hexToLinear(0xbfae94, tan); hexToLinear(0x837f74, kir);
   let placed=0, guard=0;
-  while (placed < N && guard < N*14){
+  while (placed < N && guard < N*22){
     guard++;
     const th=R.range(0,TAU), rr=Math.sqrt(R());
     const se=[0,0]; superEllipse(th,2.0,se);
-    const x=se[0]*POT.A*0.928*rr, z=se[1]*POT.B*0.928*rr;
+    const x=se[0]*POT.A*0.918*rr, z=se[1]*POT.B*0.918*rr;
     if (!inSoil(x,z)) continue;
     // keep clear of the trunk footprint
-    if (Math.hypot(x-TREE_OFF_X, z-TREE_OFF_Z) < 0.031) continue;
-    const scale = R.range(0.0016, 0.0041) * (R.chance(0.12)? 1.55 : 1.0);
-    const y = soilHeight(x,z) + scale*R.range(0.10,0.62);
+    if (Math.hypot(x-TREE_OFF_X, z-TREE_OFF_Z) < 0.034) continue;
+    const scale = R.range(0.0038, 0.0098) * (R.chance(0.10)? 1.45 : 1.0);
+    const y = soilHeight(x,z) + scale*R.range(0.02, 0.35);
     pv.set(x,y,z);
-    e.set(R.range(0,TAU),R.range(0,TAU),R.range(0,TAU));
+    e.set(R.range(-0.4,0.4), R.range(0,TAU), R.range(-0.4,0.4));
     q.setFromEuler(e);
-    s.set(scale*R.range(0.78,1.25), scale*R.range(0.62,1.0), scale*R.range(0.78,1.25));
+    s.set(scale*R.range(0.88,1.30), scale*R.range(0.55,0.80), scale*R.range(0.88,1.30));
     m.compose(pv,q,s);
     mesh.setMatrixAt(placed, m);
     const t=R();
     let c;
-    if (t<0.62) c=aka; else if (t<0.78) c=aka2; else if (t<0.93) c=pum; else c=kir;
-    const jit = R.range(0.80,1.22);
+    if (t<0.40) c=pum; else if (t<0.60) c=tan; else if (t<0.84) c=kir;
+    else if (t<0.95) c=aka; else c=aka2;
+    const jit = R.range(0.82,1.24);
     ext[placed*4+0]=c[0]*jit; ext[placed*4+1]=c[1]*jit; ext[placed*4+2]=c[2]*jit;
     ext[placed*4+3]=R();
     placed++;
@@ -4205,7 +4208,7 @@ function buildGranules(){
   mesh.count = placed;
   mesh.instanceMatrix.needsUpdate = true;
   g.setAttribute('aExtra', new THREE.InstancedBufferAttribute(ext,4));
-  mesh.material = makeStdMaterial('GRANULE', { rough: 0.78, instanced: true });
+  mesh.material = makeStdMaterial('GRANULE', { rough: 0.52, instanced: true });
   mesh.userData.depthMaterial = staticDepthMaterial(true);
   mesh.name='granules';
   TREE.stats.granules = placed;
@@ -5579,17 +5582,17 @@ function createPost(renderer){
    ========================================================================= */
 
 const RIG = {
-  target:   new THREE.Vector3(0.150, 0.462, -0.372),
-  targetTo: new THREE.Vector3(0.150, 0.462, -0.372),
-  az: 0.650, azTo: 0.650,
-  el: 0.135, elTo: 0.135,
-  r:  2.24, rTo: 2.24,
+  target:   new THREE.Vector3(0.150, 0.520, -0.372),
+  targetTo: new THREE.Vector3(0.150, 0.520, -0.372),
+  az: 0.600, azTo: 0.600,
+  el: 0.100, elTo: 0.100,
+  r:  3.30, rTo: 3.30,
   AZ: [-1.16, 1.16],
   EL: [-0.20, 0.66],
-  R:  [0.40, 2.24],
-  focus: 2.24, focusTo: 2.24, focusManual: false,
+  R:  [0.40, 3.90],
+  focus: 3.30, focusTo: 3.30, focusManual: false,
   fnum: 5.0, fnumTo: 5.0,
-  focal: 90.0,
+  focal: 82.0,
   drift: 0, idle: 0, driftPhase: 0,
   rack: null,
   padSpheres: []
@@ -5735,9 +5738,9 @@ function rigUpdate(camera, dt, allowDrift){
   const hz = (fbm3(t*0.23, 2.7, 1.9, 3)-0.5)*0.0042;
 
   camera.position.set(
-    clamp(px+hx, ROOM.x0+0.10, ROOM.x1-0.09),
+    clamp(px+hx, ROOM.x0+0.10, ROOM.x1+0.90),
     clamp(py+hy, 0.150, ROOM.y1-0.22),
-    clamp(pz+hz, ALCOVE.z1+0.055, ROOM.z1-0.10)
+    clamp(pz+hz, ALCOVE.z1+0.055, ROOM.z1+1.80)
   );
   const lookAt = RIG.target.clone();
   lookAt.x += (fbm3(t*0.19, 7.7, 4.2, 2)-0.5)*0.0026;
@@ -6708,9 +6711,9 @@ APP.setDof = function(on){
 };
 APP.resetView = function(){
   seqInterrupt();
-  RIG.azTo = 0.650; RIG.elTo = 0.135; RIG.rTo = 2.24;
-  RIG.targetTo.set(0.150, 0.462, -0.372);
-  RIG.focusTo = 2.24; RIG.focusManual = false; RIG.rack = null; RIG.idle = 0;
+  RIG.azTo = 0.600; RIG.elTo = 0.100; RIG.rTo = 3.30;
+  RIG.targetTo.set(0.150, 0.520, -0.372);
+  RIG.focusTo = 3.30; RIG.focusManual = false; RIG.rack = null; RIG.idle = 0;
   RIG.fnumTo = 5.0;
 };
 APP.sweepPetals = function(){
