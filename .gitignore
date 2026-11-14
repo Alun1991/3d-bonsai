@@ -1,0 +1,8 @@
+# working files, not part of the site
+blender/*.dmg
+.DS_Store
+node_modules/
+*.log
+
+# keep-but-skip reference copies (downloaded copy of the deployed site)
+sakura-reference.html

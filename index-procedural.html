@@ -1,0 +1,1276 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>3D Bonsai · Pine</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #e8e2d2; }
+  canvas { display: block; }
+  #title {
+    position: fixed; top: 26px; left: 30px;
+    font: 600 13px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif;
+    letter-spacing: .34em; text-transform: uppercase;
+    color: #5c5443; opacity: .85; user-select: none; pointer-events: none;
+  }
+  #hint {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    font: 11px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+    letter-spacing: .22em; text-transform: uppercase;
+    color: #6a6352; opacity: .7; user-select: none; pointer-events: none;
+  }
+  #vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 4;
+    background: radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 50%, rgba(58,48,32,.16) 100%);
+  }
+  #grain {
+    position: fixed; inset: 0; pointer-events: none; z-index: 5;
+    opacity: .045; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="title">Bonsai &middot; Pine</div>
+<div id="hint">Drag to orbit &nbsp;&middot;&nbsp; Scroll to zoom</div>
+<div id="vignette"></div>
+<div id="grain"></div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { mergeVertices, mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* ------------------------------- deterministic ------------------------------ */
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rand = mulberry32(20261114);
+const smooth = (t) => t * t * (3 - 2 * t);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function hash3(i, j, k) {
+  const n = Math.sin(i * 127.1 + j * 311.7 + k * 74.7) * 43758.5453;
+  return n - Math.floor(n);
+}
+function vnoise(x, y, z) {
+  const i = Math.floor(x), j = Math.floor(y), k = Math.floor(z);
+  const fx = smooth(x - i), fy = smooth(y - j), fz = smooth(z - k);
+  return lerp(
+    lerp(
+      lerp(hash3(i, j, k), hash3(i + 1, j, k), fx),
+      lerp(hash3(i, j + 1, k), hash3(i + 1, j + 1, k), fx), fy),
+    lerp(
+      lerp(hash3(i, j, k + 1), hash3(i + 1, j, k + 1), fx),
+      lerp(hash3(i, j + 1, k + 1), hash3(i + 1, j + 1, k + 1), fx), fy),
+    fz);
+}
+function fbm(x, y, z) {
+  return vnoise(x, y, z) * 0.55 + vnoise(x * 2.13, y * 2.13, z * 2.13) * 0.28 + vnoise(x * 4.31, y * 4.31, z * 4.31) * 0.17;
+}
+
+/* --------------------------------- renderer -------------------------------- */
+
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+const DPR = Math.min(window.devicePixelRatio, 1.75);
+renderer.setPixelRatio(DPR);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const BG = new THREE.Color(0xe7e1d1);
+scene.background = BG;
+scene.fog = new THREE.Fog(BG, 11, 19);
+
+const camera = new THREE.PerspectiveCamera(33, window.innerWidth / window.innerHeight, 0.1, 60);
+camera.position.set(2.65, 2.45, 5.55);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.82, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 3.6;
+controls.maxDistance = 9.5;
+controls.maxPolarAngle = Math.PI * 0.56;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.35;
+controls.enablePan = false;
+
+/* --------------------------------- textures -------------------------------- */
+
+const maxAniso = renderer.capabilities.getMaxAnisotropy();
+
+function makeCanvas(w, h, draw) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  return c;
+}
+
+function toTexture(canvas, { repeat = [1, 1], srgb = false, clamp = false } = {}) {
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = clamp ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
+  tex.repeat.set(repeat[0], repeat[1]);
+  tex.anisotropy = maxAniso;
+  tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// ---- bark (u = along the trunk, v = around it) ----
+function drawBark(g, w, h, mode) {
+  const r = mulberry32(7001);
+  g.fillStyle = mode === 'bump' ? '#808080' : '#6b5340';
+  g.fillRect(0, 0, w, h);
+
+  // long ridges running along the trunk
+  for (let i = 0; i < 260; i++) {
+    const y = r() * h;
+    const amp = 3 + r() * 12;
+    const freq = 2 + r() * 4;
+    const phase = r() * 10;
+    const lw = 1 + r() * 9;
+    const dark = r() < 0.62;
+    if (mode === 'bump') {
+      g.strokeStyle = dark ? 'rgba(40,40,40,0.55)' : 'rgba(215,215,215,0.45)';
+    } else {
+      g.strokeStyle = dark
+        ? `rgba(52,36,24,${0.10 + r() * 0.28})`
+        : `rgba(148,124,96,${0.06 + r() * 0.20})`;
+    }
+    g.lineWidth = lw;
+    g.beginPath();
+    for (let x = 0; x <= w; x += 6) {
+      const yy = y + Math.sin((x / w) * Math.PI * 2 * freq + phase) * amp;
+      if (x === 0) g.moveTo(x, yy); else g.lineTo(x, yy);
+    }
+    g.stroke();
+  }
+
+  // deep vertical cracks + plates
+  for (let i = 0; i < 26; i++) {
+    const x = r() * w;
+    const len = 40 + r() * 190;
+    const y0 = r() * h;
+    g.strokeStyle = mode === 'bump' ? 'rgba(30,30,30,0.75)' : 'rgba(42,28,18,0.42)';
+    g.lineWidth = 1 + r() * 3;
+    g.beginPath();
+    g.moveTo(x, y0);
+    let cx = x, cy = y0;
+    for (let s = 0; s < 6; s++) {
+      cx += (r() - 0.5) * 26;
+      cy += len / 6;
+      g.lineTo(cx, cy);
+    }
+    g.stroke();
+  }
+
+  // fine grain
+  for (let i = 0; i < 22000; i++) {
+    const x = r() * w, y = r() * h;
+    if (mode === 'bump') {
+      g.fillStyle = r() < 0.5 ? 'rgba(60,60,60,0.25)' : 'rgba(210,210,210,0.22)';
+    } else {
+      g.fillStyle = r() < 0.5 ? 'rgba(40,28,18,0.20)' : 'rgba(170,146,116,0.16)';
+    }
+    g.fillRect(x, y, 1 + r() * 2, 1 + r());
+  }
+}
+
+// ---- stone ----
+function drawStone(g, w, h, mode) {
+  const r = mulberry32(9102);
+  g.fillStyle = mode === 'bump' ? '#808080' : '#bdb8ac';
+  g.fillRect(0, 0, w, h);
+
+  for (let i = 0; i < 90; i++) {
+    const x = r() * w, y = r() * h, rad = 10 + r() * 90;
+    const grd = g.createRadialGradient(x, y, 0, x, y, rad);
+    if (mode === 'bump') {
+      const v = r() < 0.5 ? 60 : 200;
+      grd.addColorStop(0, `rgba(${v},${v},${v},0.16)`);
+      grd.addColorStop(1, 'rgba(128,128,128,0)');
+    } else if (r() < 0.5) {
+      grd.addColorStop(0, 'rgba(148,143,133,0.30)');
+      grd.addColorStop(1, 'rgba(148,143,133,0)');
+    } else {
+      grd.addColorStop(0, 'rgba(212,207,197,0.30)');
+      grd.addColorStop(1, 'rgba(212,207,197,0)');
+    }
+    g.fillStyle = grd;
+    g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+
+  for (let i = 0; i < 16000; i++) {
+    const x = r() * w, y = r() * h;
+    const v = 120 + r() * 120;
+    g.fillStyle = mode === 'bump'
+      ? `rgba(${v},${v},${v},0.16)`
+      : (r() < 0.55 ? 'rgba(120,116,106,0.22)' : 'rgba(226,222,212,0.22)');
+    g.fillRect(x, y, 1 + r() * 2, 1 + r() * 2);
+  }
+}
+
+// ---- moss detail (grayscale, multiplied by vertex colour) ----
+function drawMoss(g, w, h) {
+  const r = mulberry32(3311);
+  g.fillStyle = '#d8d8d8';
+  g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 12000; i++) {
+    const x = r() * w, y = r() * h, rad = 1 + r() * 4;
+    const v = 175 + Math.floor(r() * 75);
+    g.fillStyle = `rgba(${v},${v},${v},${0.10 + r() * 0.22})`;
+    g.beginPath();
+    g.arc(x, y, rad, 0, Math.PI * 2);
+    g.fill();
+  }
+  for (let i = 0; i < 900; i++) {
+    const x = r() * w, y = r() * h;
+    const v = 130 + Math.floor(r() * 70);
+    g.strokeStyle = `rgba(${v},${v},${v},0.28)`;
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + (r() - 0.5) * 10, y + (r() - 0.5) * 10);
+    g.stroke();
+  }
+}
+
+// ---- pine needle tuft sprite (several variants) ----
+function drawNeedles(g, w, h, seed) {
+  const r = mulberry32(seed);
+  g.clearRect(0, 0, w, h);
+  const cx = w * 0.5, cy = h * 0.52;
+  const maxR = w * 0.47;
+
+  // faint dark core so the tuft has body instead of reading as scattered lines
+  for (let i = 0; i < 26; i++) {
+    const a = r() * Math.PI * 2;
+    const rad = r() * w * 0.16;
+    const grd = g.createRadialGradient(cx, cy, 0, cx + Math.cos(a) * rad, cy + Math.sin(a) * rad, w * (0.10 + r() * 0.12));
+    grd.addColorStop(0, 'rgba(22,38,16,0.55)');
+    grd.addColorStop(1, 'rgba(22,38,16,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, w, h);
+  }
+
+  // needles: uneven length, natural colour spread, a couple of twig hints
+  for (let i = 0; i < 920; i++) {
+    const ang = r() * Math.PI * 2;
+    const startR = r() * (w * 0.13);
+    const len = w * (0.06 + Math.pow(r(), 1.6) * 0.30);
+    const x0 = cx + Math.cos(ang) * startR;
+    const y0 = cy + Math.sin(ang) * startR;
+    const x1 = x0 + Math.cos(ang) * len;
+    const y1 = y0 + Math.sin(ang) * len;
+    if (Math.hypot(x1 - cx, y1 - cy) > maxR) continue;
+
+    const bend = (r() - 0.5) * 0.7;
+    const mx = (x0 + x1) / 2 - Math.sin(ang) * len * bend * 0.25;
+    const my = (y0 + y1) / 2 + Math.cos(ang) * len * bend * 0.25;
+
+    const hue = 88 + r() * 26;
+    const lum = 10 + r() * 26;
+    g.strokeStyle = `hsl(${hue}, ${28 + r() * 26}%, ${lum}%)`;
+    g.lineWidth = 0.9 + r() * 2.1;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(x0, y0);
+    g.quadraticCurveTo(mx, my, x1, y1);
+    g.stroke();
+  }
+
+  // tiny twig fragments
+  for (let i = 0; i < 14; i++) {
+    const ang = r() * Math.PI * 2;
+    const startR = r() * w * 0.10;
+    const len = w * (0.06 + r() * 0.14);
+    g.strokeStyle = `hsla(28, 24%, ${16 + r() * 12}%, 0.7)`;
+    g.lineWidth = 1 + r() * 1.6;
+    g.beginPath();
+    g.moveTo(cx + Math.cos(ang) * startR, cy + Math.sin(ang) * startR);
+    g.lineTo(cx + Math.cos(ang) * (startR + len), cy + Math.sin(ang) * (startR + len));
+    g.stroke();
+  }
+
+  // a handful of sun-kissed needles
+  for (let i = 0; i < 90; i++) {
+    const ang = r() * Math.PI * 2;
+    const startR = w * (0.05 + r() * 0.30);
+    const len = w * (0.03 + r() * 0.09);
+    const x1 = cx + Math.cos(ang) * (startR + len);
+    const y1 = cy + Math.sin(ang) * (startR + len);
+    if (Math.hypot(x1 - cx, y1 - cy) > maxR) continue;
+    g.strokeStyle = `hsl(${82 + r() * 20}, ${34 + r() * 18}%, ${30 + r() * 16}%)`;
+    g.lineWidth = 0.8 + r() * 1.1;
+    g.beginPath();
+    g.moveTo(cx + Math.cos(ang) * startR, cy + Math.sin(ang) * startR);
+    g.lineTo(x1, y1);
+    g.stroke();
+  }
+}
+
+// ---- moss tuft sprite ----
+function drawTuft(g, w, h) {
+  const r = mulberry32(8823);
+  g.clearRect(0, 0, w, h);
+  const bx = w / 2, by = h * 0.96;
+  const greens = ['#4b6427', '#5b7a30', '#6b8c39', '#7d9c45', '#8fae52'];
+  for (let i = 0; i < 26; i++) {
+    const ang = -Math.PI / 2 + (r() - 0.5) * 2.1;
+    const len = h * (0.35 + r() * 0.55);
+    const x1 = bx + Math.cos(ang) * len;
+    const y1 = by + Math.sin(ang) * len;
+    const mx = bx + Math.cos(ang) * len * 0.5 + (r() - 0.5) * 12;
+    const my = by + Math.sin(ang) * len * 0.5;
+    g.strokeStyle = greens[Math.floor(r() * greens.length)];
+    g.lineWidth = 1.2 + r() * 2.0;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(bx + (r() - 0.5) * 10, by);
+    g.quadraticCurveTo(mx, my, x1, y1);
+    g.stroke();
+  }
+}
+
+// ---- terracotta ----
+function drawClay(g, w, h) {
+  const r = mulberry32(4477);
+  g.fillStyle = '#ac6444';
+  g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 2600; i++) {
+    const x = r() * w, y = r() * h;
+    g.fillStyle = r() < 0.5 ? 'rgba(120,62,40,0.10)' : 'rgba(206,140,104,0.10)';
+    g.fillRect(x, y, 1 + r() * 3, 1 + r() * 2);
+  }
+  for (let i = 0; i < 60; i++) {
+    const x = r() * w;
+    g.strokeStyle = `rgba(${170 + Math.floor(r() * 40)},${110 + Math.floor(r() * 30)},${80 + Math.floor(r() * 20)},0.10)`;
+    g.lineWidth = 1 + r() * 5;
+    g.beginPath();
+    g.moveTo(x, 0);
+    g.lineTo(x + (r() - 0.5) * 20, h);
+    g.stroke();
+  }
+}
+
+// ---- table cloth ----
+function drawCloth(g, w, h) {
+  const r = mulberry32(6611);
+  g.fillStyle = '#d5cfc0';
+  g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 9000; i++) {
+    const x = r() * w, y = r() * h;
+    g.fillStyle = r() < 0.5 ? 'rgba(180,172,158,0.10)' : 'rgba(240,236,226,0.12)';
+    g.fillRect(x, y, 1 + r() * 2, 1 + r() * 2);
+  }
+}
+
+// ---- derive a tangent-space normal map from a height canvas ----
+function normalFromHeight(heightCanvas, strength) {
+  const w = heightCanvas.width, h = heightCanvas.height;
+  const src = heightCanvas.getContext('2d').getImageData(0, 0, w, h).data;
+  const height = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    height[i] = (src[i * 4] * 0.299 + src[i * 4 + 1] * 0.587 + src[i * 4 + 2] * 0.114) / 255;
+  }
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const og = out.getContext('2d');
+  const img = og.createImageData(w, h);
+  const at = (x, y) => height[((y + h) % h) * w + ((x + w) % w)];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
+      const nx = -dx, ny = -dy, nz = 1;
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      const i = (y * w + x) * 4;
+      img.data[i] = (nx / len * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (ny / len * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (nz / len * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  og.putImageData(img, 0, 0);
+  return out;
+}
+
+// ---- soft radial falloff used for contact shadows ----
+const shadowBlobCanvas = makeCanvas(128, 128, (g) => {
+  const grd = g.createRadialGradient(64, 64, 2, 64, 64, 62);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.45, 'rgba(255,255,255,0.72)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 128, 128);
+});
+const shadowBlobTex = toTexture(shadowBlobCanvas, { clamp: true });
+
+const barkColorCanvas = makeCanvas(512, 1024, (g, w, h) => drawBark(g, w, h, 'color'));
+const barkHeightCanvas = makeCanvas(256, 512, (g, w, h) => drawBark(g, w, h, 'bump'));
+const barkMap = toTexture(barkColorCanvas, { repeat: [2.5, 1], srgb: true });
+const barkNormal = toTexture(normalFromHeight(barkHeightCanvas, 3.2), { repeat: [2.5, 1] });
+const barkBump = toTexture(barkHeightCanvas, { repeat: [2.5, 1] });
+const stoneMap = toTexture(makeCanvas(512, 512, (g, w, h) => drawStone(g, w, h, 'color')), { repeat: [1, 1], srgb: true });
+const stoneBump = toTexture(makeCanvas(512, 512, (g, w, h) => drawStone(g, w, h, 'bump')), { repeat: [1, 1] });
+const stoneNormal = toTexture(normalFromHeight(makeCanvas(256, 256, (g, w, h) => drawStone(g, w, h, 'bump')), 2.0), { repeat: [1, 1] });
+const mossMap = toTexture(makeCanvas(512, 512, drawMoss), { repeat: [5, 3] });
+const needleTexes = [0, 1, 2].map((i) => {
+  const tex = toTexture(makeCanvas(512, 512, (g, w, h) => drawNeedles(g, w, h, 5511 + i * 977)), { clamp: true, srgb: true });
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
+});
+const tuftTex = toTexture(makeCanvas(128, 128, drawTuft), { clamp: true, srgb: true });
+tuftTex.generateMipmaps = false;
+tuftTex.minFilter = THREE.LinearFilter;
+tuftTex.needsUpdate = true;
+const clayMap = toTexture(makeCanvas(512, 512, drawClay), { repeat: [3, 1], srgb: true });
+const clothMap = toTexture(makeCanvas(512, 512, drawCloth), { repeat: [7, 7], srgb: true });
+
+/* ----------------------------------- env ----------------------------------- */
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.42;
+
+/* ---------------------------------- lights --------------------------------- */
+
+scene.add(new THREE.HemisphereLight(0xf2eddf, 0x61584a, 1.2));
+
+const key = new THREE.DirectionalLight(0xfff1d9, 1.75);
+key.position.set(-3.4, 6.0, 3.8);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -3.6; key.shadow.camera.right = 3.6;
+key.shadow.camera.top = 5.2; key.shadow.camera.bottom = -2.2;
+key.shadow.camera.near = 1; key.shadow.camera.far = 15;
+key.shadow.bias = -0.0005;
+key.shadow.normalBias = 0.015;
+key.shadow.radius = 9;
+scene.add(key);
+
+const rim = new THREE.DirectionalLight(0xdde8ff, 0.55);
+rim.position.set(3.4, 4.2, -4.2);
+scene.add(rim);
+
+/* ---------------------------------- table ---------------------------------- */
+
+const table = new THREE.Mesh(
+  new THREE.CircleGeometry(12, 72),
+  new THREE.MeshStandardMaterial({ map: clothMap, roughness: 1, metalness: 0 })
+);
+table.rotation.x = -Math.PI / 2;
+table.position.y = -0.002;
+table.receiveShadow = true;
+scene.add(table);
+
+function addContactShadow(x, y, z, sx, sz, opacity) {
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x1e2410, transparent: true, opacity,
+    alphaMap: shadowBlobTex, depthWrite: false,
+  });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+  m.rotation.x = -Math.PI / 2;
+  m.scale.set(sx, sz, 1);
+  m.position.set(x, y, z);
+  m.renderOrder = 2;
+  scene.add(m);
+  return m;
+}
+
+// soft shadow beneath the whole pot
+addContactShadow(0, 0.004, 0, 2.05, 2.0, 0.5);
+
+/* ----------------------------------- bowl ---------------------------------- */
+
+const bowlProfile = [
+  [0.00, 0.035], [0.30, 0.012], [0.72, 0.000], [0.98, 0.012], [1.22, 0.070],
+  [1.44, 0.190], [1.59, 0.340], [1.665, 0.480], [1.675, 0.520],
+  [1.655, 0.548], [1.615, 0.536], [1.545, 0.430], [1.400, 0.360],
+  [1.100, 0.330], [0.600, 0.315], [0.000, 0.310],
+].map(([x, y]) => new THREE.Vector2(x, y));
+
+const bowl = new THREE.Mesh(
+  new THREE.LatheGeometry(bowlProfile, 128),
+  new THREE.MeshStandardMaterial({
+    map: clayMap, color: 0xf0e4da,
+    roughness: 0.52, metalness: 0.02,
+    envMapIntensity: 0.55,
+  })
+);
+bowl.castShadow = true;
+bowl.receiveShadow = true;
+scene.add(bowl);
+
+const soil = new THREE.Mesh(
+  new THREE.CircleGeometry(1.58, 72),
+  new THREE.MeshStandardMaterial({ color: 0x2e2317, roughness: 1 })
+);
+soil.rotation.x = -Math.PI / 2;
+soil.position.y = 0.315;
+scene.add(soil);
+
+/* ----------------------------------- mound --------------------------------- */
+
+const MOUND_R = 1.36;
+const MOUND_CY = 0.27;
+const MOUND_SY = 0.5;
+const moundGeo = new THREE.SphereGeometry(MOUND_R, 160, 104);
+
+{
+  const pos = moundGeo.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const cDark = new THREE.Color(0x3d5420);
+  const cMid = new THREE.Color(0x5d7d2f);
+  const cLight = new THREE.Color(0x86a74d);
+  const cBrown = new THREE.Color(0x453a23);
+  const tmp = new THREE.Color();
+
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const len = Math.sqrt(x * x + y * y + z * z) || 1;
+    const n = fbm(x * 2.1 + 11.0, y * 2.1 + 7.0, z * 2.1 + 3.0);
+    const disp = 1 + (n - 0.5) * 0.24;
+    pos.setXYZ(i, x * disp, y * disp, z * disp);
+
+    const hf = y / len;
+    const m = fbm(x * 3.6 + 4.0, y * 3.6 + 9.0, z * 3.6 + 1.0);
+    if (m < 0.42 && hf < 0.4) tmp.copy(cBrown).lerp(cDark, m / 0.42);
+    else if (m < 0.62) tmp.copy(cDark).lerp(cMid, (m - 0.42) / 0.2);
+    else tmp.copy(cMid).lerp(cLight, (m - 0.62) / 0.38);
+    tmp.multiplyScalar(0.80 + 0.34 * fbm(x * 7.0, y * 7.0, z * 7.0));
+    colors[i * 3] = tmp.r; colors[i * 3 + 1] = tmp.g; colors[i * 3 + 2] = tmp.b;
+  }
+  moundGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  moundGeo.computeVertexNormals();
+}
+
+const mound = new THREE.Mesh(
+  moundGeo,
+  new THREE.MeshStandardMaterial({
+    vertexColors: true, map: mossMap,
+    roughness: 1, metalness: 0,
+    bumpMap: mossMap, bumpScale: 0.10,
+  })
+);
+mound.scale.set(1, MOUND_SY, 1);
+mound.position.y = MOUND_CY;
+mound.castShadow = true;
+mound.receiveShadow = true;
+scene.add(mound);
+
+function moundSurfaceY(x, z) {
+  const q = 1 - (x * x + z * z) / (MOUND_R * MOUND_R);
+  if (q <= 0) return MOUND_CY;
+  const n = fbm(x * 2.1 + 11.0, 7.0, z * 2.1 + 3.0);
+  const disp = 1 + (n - 0.5) * 0.24;
+  return MOUND_CY + MOUND_R * MOUND_SY * disp * Math.sqrt(q);
+}
+
+/* ----------------------------------- rocks --------------------------------- */
+
+const rockDefs = [
+  { p: [-0.78, 0, 0.51], s: [0.46, 0.30, 0.40], col: 0xcdc8bc, rot: 0.6 },
+  { p: [-0.24, 0, 0.78], s: [0.28, 0.19, 0.26], col: 0xaaa598, rot: 1.8 },
+  { p: [0.70, 0, 0.65], s: [0.32, 0.21, 0.27], col: 0xbdb8ab, rot: 2.9 },
+  { p: [0.90, 0, 0.14], s: [0.22, 0.15, 0.20], col: 0xa19c8f, rot: 4.1 },
+  { p: [-0.94, 0, -0.22], s: [0.28, 0.19, 0.25], col: 0xb3aea1, rot: 5.2 },
+  { p: [0.14, 0, 0.88], s: [0.18, 0.12, 0.15], col: 0xd2cdc0, rot: 0.9 },
+  { p: [0.36, 0, 0.94], s: [0.11, 0.08, 0.10], col: 0xdbd6c9, rot: 3.4 },
+  { p: [-0.47, 0, 0.90], s: [0.09, 0.07, 0.09], col: 0xc0bbae, rot: 2.2 },
+];
+
+for (const def of rockDefs) {
+  let geo = new THREE.IcosahedronGeometry(1, 5);
+  geo = mergeVertices(geo); // welded => smooth interpolated normals, no facets
+  const pos = geo.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const n = fbm(v.x * 1.5 + def.rot * 5, v.y * 1.5 + 3.1, v.z * 1.5 + def.rot);
+    v.multiplyScalar(0.94 + n * 0.12);
+    if (v.y < -0.35) v.y = -0.35 + (v.y + 0.35) * 0.35;
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+
+  const mat = new THREE.MeshStandardMaterial({
+    map: stoneMap, normalMap: stoneNormal,
+    normalScale: new THREE.Vector2(0.35, 0.35),
+    bumpMap: stoneBump, bumpScale: 0.16,
+    color: def.col, roughness: 0.9, metalness: 0.0,
+    envMapIntensity: 0.22,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.scale.set(def.s[0], def.s[1] * 1.12, def.s[2]);
+  const gy = moundSurfaceY(def.p[0], def.p[2]);
+  mesh.position.set(def.p[0], gy - def.s[1] * 0.34, def.p[2]);
+  mesh.rotation.y = def.rot * 2.1;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+}
+
+/* ------------------------------ table pebbles ------------------------------ */
+
+{
+  const geo = new THREE.SphereGeometry(1, 12, 9);
+  const mat = new THREE.MeshStandardMaterial({
+    map: stoneMap, bumpMap: stoneBump, bumpScale: 0.3,
+    color: 0xd8d2c4, roughness: 0.9,
+  });
+  const pebbles = new THREE.InstancedMesh(geo, mat, 26);
+  const d = new THREE.Object3D();
+  for (let i = 0; i < 26; i++) {
+    const a = rand() * Math.PI * 2;
+    const r = 1.95 + rand() * 1.05;
+    const s = 0.025 + rand() * 0.045;
+    d.position.set(Math.cos(a) * r, s * 0.55, Math.sin(a) * r);
+    d.scale.set(s * (0.8 + rand() * 0.5), s * (0.6 + rand() * 0.35), s * (0.8 + rand() * 0.5));
+    d.rotation.set(rand() * 3, rand() * 3, rand() * 3);
+    d.updateMatrix();
+    pebbles.setMatrixAt(i, d.matrix);
+  }
+  pebbles.castShadow = true;
+  pebbles.receiveShadow = true;
+  scene.add(pebbles);
+}
+
+/* ------------------------------ tapered tube ------------------------------- */
+
+const barkMat = new THREE.MeshStandardMaterial({
+  map: barkMap, normalMap: barkNormal,
+  normalScale: new THREE.Vector2(0.6, 0.6),
+  color: 0xb3a898, roughness: 0.9, metalness: 0.0,
+  envMapIntensity: 0.3,
+});
+
+function taperedTube(curve, radiusFn, tubularSegments, radialSegments, ridgeFn, uvRepeat) {
+  const frames = curve.computeFrenetFrames(tubularSegments, false);
+  const positions = [];
+  const uvs = [];
+  const indices = [];
+  const P = new THREE.Vector3();
+  const v = new THREE.Vector3();
+
+  for (let i = 0; i <= tubularSegments; i++) {
+    const u = i / tubularSegments;
+    curve.getPointAt(u, P);
+    const N = frames.normals[i];
+    const B = frames.binormals[i];
+    for (let j = 0; j <= radialSegments; j++) {
+      const vv = j / radialSegments;
+      const ang = vv * Math.PI * 2;
+      const cos = Math.cos(ang), sin = Math.sin(ang);
+      let r = radiusFn(u);
+      if (ridgeFn) r *= ridgeFn(u, ang);
+      v.copy(P).addScaledVector(N, cos * r).addScaledVector(B, sin * r);
+      positions.push(v.x, v.y, v.z);
+      uvs.push(u * (uvRepeat ? uvRepeat[0] : 1), vv * (uvRepeat ? uvRepeat[1] : 1));
+    }
+  }
+  for (let i = 0; i < tubularSegments; i++) {
+    for (let j = 0; j < radialSegments; j++) {
+      const a = i * (radialSegments + 1) + j;
+      const b = (i + 1) * (radialSegments + 1) + j;
+      indices.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setIndex(indices);
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+const tree = new THREE.Group();
+scene.add(tree);
+
+/* ---------------------------------- trunk ---------------------------------- */
+
+const trunkCurve = new THREE.CatmullRomCurve3([
+  new THREE.Vector3(0.04, 0.78, 0.12),
+  new THREE.Vector3(0.22, 1.10, 0.10),
+  new THREE.Vector3(0.34, 1.46, 0.03),
+  new THREE.Vector3(0.16, 1.80, -0.03),
+  new THREE.Vector3(-0.20, 2.10, -0.05),
+  new THREE.Vector3(-0.28, 2.42, -0.02),
+  new THREE.Vector3(-0.06, 2.72, 0.02),
+  new THREE.Vector3(0.12, 2.98, 0.02),
+  new THREE.Vector3(0.10, 3.12, 0.00),
+]);
+
+const trunkGeo = taperedTube(
+  trunkCurve,
+  (u) => {
+    // aggressive taper: caliper drops ~12x from nebari to apex
+    const base = lerp(0.245, 0.020, Math.pow(u, 0.85));
+    const flare = 1 + 0.46 * Math.exp(-u * 9.0);
+    return base * flare;
+  },
+  260, 24,
+  (u, ang) => {
+    // vertical bark ridges, stronger near the base
+    const ridge = fbm(Math.cos(ang) * 4.5 + 3.1, u * 9.0 + 1.7, Math.sin(ang) * 4.5 + 5.6);
+    const fine = Math.sin(ang * 13.0 + u * 4.0) * 0.5 + 0.5;
+    return 1 + (ridge - 0.5) * 0.075 + (fine - 0.5) * 0.012;
+  },
+  [2, 1]
+);
+
+const trunk = new THREE.Mesh(trunkGeo, barkMat);
+trunk.castShadow = true;
+trunk.receiveShadow = true;
+tree.add(trunk);
+
+/* ---------------------------------- roots ---------------------------------- */
+
+// trunk centre point + radius at a given height, used for organic junctions
+function trunkInfoAtY(y) {
+  let bestU = 0, bestD = Infinity;
+  for (let i = 0; i <= 400; i++) {
+    const u = i / 400;
+    const p = trunkCurve.getPointAt(u);
+    const d = Math.abs(p.y - y);
+    if (d < bestD) { bestD = d; bestU = u; }
+  }
+  const p = trunkCurve.getPointAt(bestU);
+  const base = lerp(0.196, 0.034, Math.pow(bestU, 0.92));
+  const flare = 1 + 0.40 * Math.exp(-bestU * 8.0);
+  return { u: bestU, p, r: base * flare };
+}
+
+const rootDefs = [
+  [[0.03, 0.95, 0.14], [0.38, 0.84, 0.40], [0.66, 0.70, 0.58]],
+  [[0.02, 0.95, 0.12], [-0.42, 0.86, 0.42], [-0.74, 0.72, 0.60]],
+  [[0.05, 0.95, 0.10], [0.24, 0.84, -0.32], [0.44, 0.70, -0.60]],
+  [[0.00, 0.95, 0.10], [-0.34, 0.85, -0.34], [-0.62, 0.72, -0.56]],
+  [[0.03, 0.95, 0.14], [0.60, 0.85, 0.06], [0.96, 0.72, -0.10]],
+  [[0.02, 0.95, 0.12], [-0.20, 0.90, 0.52], [-0.30, 0.80, 0.86]],
+];
+
+for (const pts of rootDefs) {
+  const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(...p)));
+  const geo = taperedTube(
+    curve,
+    (u) => {
+      // near-zero radius at u = 0 (buried inside the trunk flare), swelling to
+      // root caliper: a swept tube with an open start never shows its rim
+      const grow = Math.min(1, u / 0.18);
+      const ramp = grow * grow * (3 - 2 * grow);
+      const full = lerp(0.108, 0.010, Math.pow(u, 0.62));
+      return Math.max(0.0012, full * ramp);
+    },
+    88, 16,
+    (u, ang) => 1 + (fbm(Math.cos(ang) * 4 + u * 6, u * 5, Math.sin(ang) * 4) - 0.5) * 0.10,
+    [1.5, 1]
+  );
+  const mesh = new THREE.Mesh(geo, barkMat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  tree.add(mesh);
+}
+
+/* --------------------------------- branches --------------------------------- */
+
+const branchDefs = [
+  { pts: [[0.08, 2.02, 0.02], [0.50, 2.14, 0.14], [1.12, 2.24, 0.26], [1.90, 2.30, 0.36]], r1: 0.012 },
+  { pts: [[-0.26, 2.30, -0.02], [-0.55, 2.44, 0.02], [-0.95, 2.54, 0.06], [-1.18, 2.62, 0.10]], r1: 0.010 },
+  { pts: [[-0.16, 2.60, 0.00], [0.35, 2.78, 0.05], [0.70, 2.92, 0.08]], r1: 0.010 },
+  { pts: [[0.14, 1.80, 0.02], [-0.42, 1.90, 0.14], [-0.62, 1.97, 0.24]], r1: 0.008 },
+  { pts: [[0.26, 1.56, 0.08], [0.48, 1.66, 0.30], [0.74, 1.74, 0.46]], r1: 0.008 },
+];
+
+const branchCurves = [];
+
+for (const b of branchDefs) {
+  const info = trunkInfoAtY(b.pts[0][1]);
+  const p1 = new THREE.Vector3(...b.pts[1]);
+  const dir = p1.clone().sub(info.p);
+  dir.y *= 0.4;
+  dir.normalize();
+
+  // start the branch inside the trunk so no cross-section ever shows, and grow
+  // it out of the same radius as the trunk there: a clean fused intersection
+  const start = info.p.clone();
+  const pts = [start, ...b.pts.slice(1).map((p) => new THREE.Vector3(...p))];
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const r0 = info.r * 0.55;
+  branchCurves.push({ curve, r0, r1: b.r1 });
+
+  const geo = taperedTube(
+    curve,
+    (u) => {
+      const grow = Math.min(1, u / 0.14);
+      const ramp = grow * grow * (3 - 2 * grow);
+      const full = lerp(r0, b.r1, Math.pow(u, 0.5));
+      return Math.max(0.0012, full * ramp);
+    },
+    104, 16,
+    (u, ang) => 1 + (fbm(Math.cos(ang) * 4 + u * 8, u * 7, Math.sin(ang) * 4) - 0.5) * 0.08,
+    [1, 1]
+  );
+  const mesh = new THREE.Mesh(geo, barkMat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  tree.add(mesh);
+}
+
+/* ---------------------------------- twigs ----------------------------------- */
+// Kojo-no-mai-style zigzag ramification: age lives in the twigs, not the trunk.
+
+const twigRand = mulberry32(30607);
+const twigGeos = [];
+const tmpAxis = new THREE.Vector3();
+
+function addTwig(origin, dir, len, rad, depth) {
+  let cur = origin.clone();
+  const d = dir.clone().normalize();
+  const steps = 2 + Math.floor(twigRand() * 2);
+  let radius = rad;
+
+  for (let i = 0; i < steps; i++) {
+    // a direction change at every node
+    tmpAxis.set(twigRand() - 0.5, twigRand() - 0.5, twigRand() - 0.5).normalize();
+    d.applyAxisAngle(tmpAxis, (twigRand() < 0.5 ? -1 : 1) * (0.5 + twigRand() * 0.55)).normalize();
+    d.y += 0.12;
+    d.normalize();
+
+    const segLen = (len / steps) * (1 - i * 0.1);
+    const nxt = cur.clone().addScaledVector(d, segLen);
+    const mid = cur.clone().lerp(nxt, 0.5)
+      .add(new THREE.Vector3((twigRand() - 0.5) * 0.03, (twigRand() - 0.5) * 0.03, (twigRand() - 0.5) * 0.03));
+
+    const curve = new THREE.CatmullRomCurve3([cur.clone(), mid, nxt.clone()]);
+    const rStart = Math.max(0.0016, radius);
+    twigGeos.push(taperedTube(
+      curve,
+      (u) => {
+        const grow = Math.min(1, u / 0.3);
+        const ramp = grow * grow * (3 - 2 * grow);
+        return Math.max(0.0008, lerp(rStart, rStart * 0.55, u) * ramp);
+      },
+      10, 6, null, [1, 1]
+    ));
+
+    cur = nxt;
+    radius *= 0.60;
+
+    if (depth < 2 && twigRand() < 0.8) {
+      const cd = d.clone();
+      tmpAxis.set(twigRand() - 0.5, twigRand() - 0.5, twigRand() - 0.5).normalize();
+      cd.applyAxisAngle(tmpAxis, (twigRand() < 0.5 ? -1 : 1) * (0.6 + twigRand() * 0.5)).normalize();
+      cd.y += 0.06;
+      cd.normalize();
+      addTwig(cur, cd, len * 0.62, radius * 1.1, depth + 1);
+    }
+  }
+}
+
+for (const bc of branchCurves) {
+  const samples = 7;
+  for (let i = 0; i < samples; i++) {
+    const u = 0.30 + (i / samples) * 0.68;
+    const p = bc.curve.getPointAt(u);
+    const t = bc.curve.getTangentAt(u);
+    const r = lerp(bc.r0, bc.r1, Math.pow(u, 0.5));
+    const n = 1 + Math.floor(twigRand() * 2);
+    for (let k = 0; k < n; k++) {
+      const dir = t.clone();
+      dir.x += (twigRand() - 0.5) * 1.3;
+      dir.y += 0.30 + twigRand() * 0.45;
+      dir.z += (twigRand() - 0.5) * 1.3;
+      dir.normalize();
+      addTwig(p, dir, 0.15 + twigRand() * 0.17, r * 0.55, 0);
+    }
+  }
+}
+
+if (twigGeos.length) {
+  const mergedTwigs = mergeGeometries(twigGeos, false);
+  twigGeos.forEach((g) => g.dispose());
+  const twigMat = new THREE.MeshStandardMaterial({
+    map: barkMap, normalMap: barkNormal,
+    normalScale: new THREE.Vector2(0.25, 0.25),
+    color: 0x8b8174, roughness: 0.94, metalness: 0.0,
+    envMapIntensity: 0.2,
+  });
+  const twigs = new THREE.Mesh(mergedTwigs, twigMat);
+  twigs.castShadow = true;
+  twigs.receiveShadow = true;
+  tree.add(twigs);
+}
+
+/* --------------------------------- foliage ---------------------------------- */
+
+const padDefs = [
+  [0.10, 3.24, 0.00, 0.50],
+  [-0.24, 3.10, -0.12, 0.30],
+  [0.36, 3.06, 0.14, 0.28],
+  [0.72, 2.94, 0.08, 0.34],
+  [0.44, 2.80, 0.03, 0.22],
+  [-0.78, 2.52, 0.02, 0.30],
+  [-1.18, 2.64, 0.10, 0.36],
+  [1.05, 2.20, 0.25, 0.34],
+  [1.34, 2.24, 0.29, 0.24],
+  [1.55, 2.30, 0.33, 0.42],
+  [1.94, 2.26, 0.36, 0.28],
+  [-0.44, 1.90, 0.14, 0.17],
+  [-0.66, 1.99, 0.25, 0.24],
+  [0.78, 1.76, 0.46, 0.22],
+];
+
+const puffData = [];               // solid volume underneath the needles
+const spriteData = [[], [], []];   // alpha needle tufts, 3 texture variants
+const dummy = new THREE.Object3D();
+const ZAXIS = new THREE.Vector3(0, 0, 1);
+const Q90 = new THREE.Quaternion().setFromAxisAngle(ZAXIS, Math.PI / 2);
+
+const puffPalette = [0x24391a, 0x2b4420, 0x335025, 0x294620].map((c) => new THREE.Color(c));
+
+function clump(cx, cy, cz, radius) {
+  const ex = radius * 1.0;
+  const ey = radius * 0.46;
+  const ez = radius * 0.88;
+
+  // dark volume so the pad is not see-through
+  const puffCount = Math.max(30, Math.round(radius * 100));
+  for (let i = 0; i < puffCount; i++) {
+    const a = rand() * Math.PI * 2;
+    const b = Math.acos(2 * rand() - 1);
+    const rr = Math.cbrt(rand());
+    const s = radius * (0.13 + rand() * 0.10);
+    dummy.position.set(
+      cx + Math.sin(b) * Math.cos(a) * ex * rr * 0.66,
+      cy + Math.cos(b) * ey * rr * 0.66,
+      cz + Math.sin(b) * Math.sin(a) * ez * rr * 0.66
+    );
+    dummy.rotation.set(rand() * 3, rand() * 3, rand() * 3);
+    dummy.scale.set(s, s * 0.8, s);
+    dummy.updateMatrix();
+    const c = puffPalette[Math.floor(rand() * puffPalette.length)].clone().multiplyScalar(0.85 + rand() * 0.3);
+    puffData.push({ m: dummy.matrix.clone(), c });
+  }
+
+  // needle tufts: small crossed card pairs, randomly mirrored, 3 textures
+  const samples = Math.max(140, Math.round(radius * 560));
+  for (let i = 0; i < samples; i++) {
+    const a = rand() * Math.PI * 2;
+    const b = Math.acos(2 * rand() - 1);
+    const dir = new THREE.Vector3(
+      Math.sin(b) * Math.cos(a), Math.cos(b), Math.sin(b) * Math.sin(a)
+    );
+    const shell = 0.42 + rand() * 0.58;
+    const px = dir.x * ex * shell;
+    const py = dir.y * ey * shell;
+    const pz = dir.z * ez * shell;
+
+    const nrm = new THREE.Vector3(dir.x / ex, dir.y / ey, dir.z / ez).normalize();
+    nrm.x += (rand() - 0.5) * 0.85;
+    nrm.y += (rand() - 0.5) * 0.7 + 0.05;
+    nrm.z += (rand() - 0.5) * 0.85;
+    nrm.normalize();
+
+    const q = new THREE.Quaternion().setFromUnitVectors(ZAXIS, nrm);
+    q.multiply(new THREE.Quaternion().setFromAxisAngle(ZAXIS, rand() * Math.PI * 2));
+
+    const size = radius * (0.26 + rand() * 0.26);
+    const variant = Math.floor(rand() * 3);
+
+    for (let k = 0; k < 2; k++) {
+      const qq = k === 0 ? q.clone() : q.clone().multiply(Q90);
+      dummy.position.set(cx + px, cy + py, cz + pz);
+      dummy.quaternion.copy(qq);
+      const flip = rand() < 0.5 ? -1 : 1;
+      dummy.scale.set(size * flip, size * (0.85 + rand() * 0.35), size);
+      dummy.updateMatrix();
+
+      const v = 0.60 + rand() * 0.42;
+      const c = new THREE.Color(v * (0.92 + rand() * 0.16), v * (0.9 + rand() * 0.2), v * (0.82 + rand() * 0.2));
+      spriteData[variant].push({ m: dummy.matrix.clone(), c });
+    }
+  }
+}
+
+for (const [px, py, pz, pr] of padDefs) {
+  clump(px, py, pz, pr);
+  const satellites = 1 + Math.floor(rand() * 3);
+  for (let i = 0; i < satellites; i++) {
+    const ang = rand() * Math.PI * 2;
+    const d = pr * (0.55 + rand() * 0.5);
+    clump(
+      px + Math.cos(ang) * d,
+      py + (rand() - 0.45) * pr * 0.22,
+      pz + Math.sin(ang) * d,
+      pr * (0.42 + rand() * 0.26)
+    );
+  }
+}
+
+const puffGeo = new THREE.IcosahedronGeometry(1, 1);
+const puffMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0, flatShading: true });
+const puffs = new THREE.InstancedMesh(puffGeo, puffMat, puffData.length);
+puffData.forEach((d, i) => { puffs.setMatrixAt(i, d.m); puffs.setColorAt(i, d.c); });
+puffs.instanceMatrix.needsUpdate = true;
+if (puffs.instanceColor) puffs.instanceColor.needsUpdate = true;
+puffs.castShadow = true;
+puffs.receiveShadow = true;
+tree.add(puffs);
+
+const spriteGeo = new THREE.PlaneGeometry(1, 1);
+const sunDir = new THREE.Vector3(-3.4, 6.0, 3.8).normalize();
+
+// light shining through needles when the key light is behind them
+function addTranslucency(mat, tint, strength) {
+  const prevCompile = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader, renderer) => {
+    if (prevCompile) prevCompile(shader, renderer);
+    shader.uniforms.uSunDir = { value: sunDir };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vNeedleWorld;\nvarying vec3 vNeedleNormal;')
+      .replace('#include <project_vertex>', `#include <project_vertex>
+#ifdef USE_INSTANCING
+  vNeedleWorld = ( modelMatrix * instanceMatrix * vec4( transformed, 1.0 ) ).xyz;
+  vNeedleNormal = normalize( mat3( modelMatrix ) * mat3( instanceMatrix ) * objectNormal );
+#else
+  vNeedleWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+  vNeedleNormal = normalize( mat3( modelMatrix ) * objectNormal );
+#endif`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vNeedleWorld;\nvarying vec3 vNeedleNormal;\nuniform vec3 uSunDir;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  {
+    vec3 viewToEye = normalize( vNeedleWorld - cameraPosition );
+    float back = pow( saturate( dot( viewToEye, uSunDir ) ), 2.5 );
+    float through = saturate( -dot( normalize( vNeedleNormal ), uSunDir ) );
+    totalEmissiveRadiance += diffuseColor.rgb * vec3( ${tint} ) * through * back * ${strength};
+  }`);
+  };
+  mat.customProgramCacheKey = () => `trans-${tint}-${strength}`;
+  return mat;
+}
+
+for (let v = 0; v < 3; v++) {
+  const mat = addTranslucency(new THREE.MeshStandardMaterial({
+    map: needleTexes[v], alphaTest: 0.5, side: THREE.FrontSide,
+    roughness: 0.9, metalness: 0.0, color: 0xffffff,
+    envMapIntensity: 0.2,
+  }), '0.40, 0.58, 0.18', '0.7');
+  const arr = spriteData[v];
+  const mesh = new THREE.InstancedMesh(spriteGeo, mat, arr.length);
+  arr.forEach((d, i) => { mesh.setMatrixAt(i, d.m); mesh.setColorAt(i, d.c); });
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.receiveShadow = true;
+  mesh.castShadow = true;
+  mesh.customDepthMaterial = new THREE.MeshDepthMaterial({
+    depthPacking: THREE.RGBADepthPacking,
+    map: needleTexes[v],
+    alphaTest: 0.5,
+    side: THREE.FrontSide,
+  });
+  tree.add(mesh);
+}
+
+/* ------------------------------- moss tufts -------------------------------- */
+
+{
+  const geo = new THREE.PlaneGeometry(1, 1);
+  const mat = new THREE.MeshStandardMaterial({
+    map: tuftTex, alphaTest: 0.32, side: THREE.DoubleSide,
+    roughness: 1, metalness: 0, envMapIntensity: 0.3,
+  });
+  const count = 3400;
+  const tufts = new THREE.InstancedMesh(geo, mat, count * 2);
+  const cA = new THREE.Color(0x557025), cB = new THREE.Color(0x74912f), cC = new THREE.Color(0x8dab4a);
+  const col = new THREE.Color();
+  const nrm = new THREE.Vector3();
+  const q = new THREE.Quaternion();
+  const qz = new THREE.Quaternion();
+  const q90 = new THREE.Quaternion().setFromAxisAngle(ZAXIS, Math.PI / 2);
+
+  for (let i = 0; i < count; i++) {
+    const a = rand() * Math.PI * 2;
+    // denser towards the pot edge and around the nebari, thinner in between
+    let r = 1.44 * Math.pow(rand(), 0.42);
+    if (rand() < 0.22) r = 0.28 + rand() * 0.34;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const y = moundSurfaceY(x, z) - 0.006;
+
+    // stand mostly upright, tips leaning outward
+    nrm.set(x * 0.30, 1, z * 0.30).normalize();
+    q.setFromUnitVectors(ZAXIS, nrm);
+    qz.setFromAxisAngle(ZAXIS, rand() * Math.PI * 2);
+    q.multiply(qz);
+
+    const edge = Math.min(1, Math.max(0, (r - 0.9) / 0.55));
+    const s = (0.032 + Math.pow(rand(), 1.4) * 0.075) * (1 + edge * 0.45);
+    for (let k = 0; k < 2; k++) {
+      dummy.position.set(x, y, z);
+      dummy.quaternion.copy(k === 0 ? q : q.clone().multiply(q90));
+      dummy.scale.set(s * (0.85 + rand() * 0.3), s * (0.8 + rand() * 0.5), s);
+      dummy.updateMatrix();
+      tufts.setMatrixAt(i * 2 + k, dummy.matrix);
+
+      const t = rand();
+      col.copy(t < 0.45 ? cA : t < 0.8 ? cB : cC).multiplyScalar(0.82 + rand() * 0.34);
+      tufts.setColorAt(i * 2 + k, col);
+    }
+  }
+  tufts.instanceMatrix.needsUpdate = true;
+  if (tufts.instanceColor) tufts.instanceColor.needsUpdate = true;
+  tufts.receiveShadow = true;
+  tufts.castShadow = true;
+  tufts.customDepthMaterial = new THREE.MeshDepthMaterial({
+    depthPacking: THREE.RGBADepthPacking, map: tuftTex, alphaTest: 0.32, side: THREE.DoubleSide,
+  });
+  tree.add(tufts);
+
+  // fallen needles on the moss
+  const litterGeo = new THREE.PlaneGeometry(1, 1);
+  litterGeo.rotateX(-Math.PI / 2);
+  const litterMat = new THREE.MeshStandardMaterial({ color: 0x313b24, roughness: 1, flatShading: true });
+  const litterCount = 180;
+  const litter = new THREE.InstancedMesh(litterGeo, litterMat, litterCount);
+  const lc = new THREE.Color();
+  const lq = new THREE.Quaternion();
+  for (let i = 0; i < litterCount; i++) {
+    const a = rand() * Math.PI * 2;
+    const r = rand() * 0.95;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const y = moundSurfaceY(x, z) + 0.002;
+    dummy.position.set(x, y, z);
+    lq.setFromEuler(new THREE.Euler((rand() - 0.5) * 0.35, rand() * Math.PI * 2, (rand() - 0.5) * 0.35));
+    dummy.quaternion.copy(lq);
+    const s = 0.014 + rand() * 0.032;
+    dummy.scale.set(s * (0.85 + rand() * 0.35), s * (0.55 + rand() * 0.25), s);
+    dummy.updateMatrix();
+    litter.setMatrixAt(i, dummy.matrix);
+    lc.set(0x3d4a2c).multiplyScalar(0.82 + rand() * 0.36);
+    litter.setColorAt(i, lc);
+  }
+  litter.instanceMatrix.needsUpdate = true;
+  if (litter.instanceColor) litter.instanceColor.needsUpdate = true;
+  litter.receiveShadow = true;
+  tree.add(litter);
+}
+
+/* ---------------------------------- grass ----------------------------------- */
+
+{
+  const bladeGeo = new THREE.ConeGeometry(1, 1, 4);
+  bladeGeo.translate(0, 0.5, 0);
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0x8a9648, roughness: 1, flatShading: true });
+  const count = 14;
+  const blades = new THREE.InstancedMesh(bladeGeo, bladeMat, count);
+  const col = new THREE.Color();
+  for (let i = 0; i < count; i++) {
+    const a = rand() * Math.PI * 2;
+    const r = 0.85 + Math.sqrt(rand()) * 0.55;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const h = 0.07 + rand() * 0.10;
+    dummy.position.set(x, moundSurfaceY(x, z) - 0.02, z);
+    dummy.rotation.set((rand() - 0.5) * 0.8, rand() * Math.PI * 2, (rand() - 0.5) * 0.8);
+    dummy.scale.set(0.007 + rand() * 0.006, h, 0.007 + rand() * 0.006);
+    dummy.updateMatrix();
+    blades.setMatrixAt(i, dummy.matrix);
+    col.set(0x87944a).multiplyScalar(0.8 + rand() * 0.4);
+    blades.setColorAt(i, col);
+  }
+  blades.instanceMatrix.needsUpdate = true;
+  if (blades.instanceColor) blades.instanceColor.needsUpdate = true;
+  blades.castShadow = true;
+  tree.add(blades);
+}
+
+/* ------------------------------- post-process ------------------------------- */
+
+const w = window.innerWidth, h = window.innerHeight;
+const rt = new THREE.WebGLRenderTarget(w * DPR, h * DPR, {
+  type: THREE.HalfFloatType, samples: 4,
+});
+const composer = new EffectComposer(renderer, rt);
+
+composer.addPass(new RenderPass(scene, camera));
+
+const gtao = new GTAOPass(scene, camera, w, h);
+gtao.output = GTAOPass.OUTPUT.Default;
+gtao.blendIntensity = 0.6;
+gtao.updateGtaoMaterial({ radius: 0.18, distanceExponent: 1.2, thickness: 0.7, scale: 1.0, samples: 16 });
+composer.addPass(gtao);
+
+const bokeh = new BokehPass(scene, camera, {
+  focus: 5.2, aperture: 0.00018, maxblur: 0.0028,
+});
+bokeh.enabled = false;
+composer.addPass(bokeh);
+
+const bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.13, 0.5, 0.92);
+composer.addPass(bloom);
+
+composer.addPass(new OutputPass());
+
+/* ---------------------------------- render ---------------------------------- */
+
+window.__scene = scene;
+window.__renderer = renderer;
+
+let frameNo = 0;
+window.__stats = { triangles: 0, calls: 0 };
+
+function animate(tms) {
+  const t = tms * 0.001;
+  tree.rotation.z = Math.sin(t * 0.55) * 0.0028;
+  tree.rotation.x = Math.cos(t * 0.42) * 0.0018;
+  controls.update();
+  composer.render();
+
+  if (++frameNo % 30 === 0) {
+    window.__stats = {
+      triangles: renderer.info.render.triangles,
+      calls: renderer.info.render.calls,
+    };
+  }
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+window.addEventListener('resize', () => {
+  const W = window.innerWidth, H = window.innerHeight;
+  camera.aspect = W / H;
+  camera.updateProjectionMatrix();
+  renderer.setSize(W, H);
+  composer.setSize(W, H);
+});
+</script>
+</body>
+</html>
