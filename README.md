@@ -4,7 +4,7 @@
 
 一盆黒松（Pinus thunbergii）摆在干净的摄影棚里——全部由代码生成：虬曲盘干、鳞片树皮、云片针叶、苔藓土丘、圆卵石、红陶浅盆，没有一个外部模型资产。单 HTML 文件，依赖仅 CDN 上的 three.js。
 
-**在线预览：** [https://alun1991.github.io/3d-bonsai/](https://alun1991.github.io/3d-bonsai/)
+**在线预览：** [黒松（当前版）](https://alun1991.github.io/3d-bonsai/) · [富士桜（原版）](https://alun1991.github.io/3d-bonsai/sakura.html)
 
 ![hero](docs/hero.jpg)
 
@@ -43,6 +43,7 @@ python3 -m http.server 5173
 | 文件 | 说明 |
 |---|---|
 | `index.html` | 当前版本，单文件完整场景（过程化网格 + 程序化贴图 + 光照烘焙 + 后处理） |
+| `sakura.html` | 原来的富士桜完整场景，可独立在线预览 |
 | `index-procedural.html` | 早期过程式版本（樱花） |
 | `index-gltf-version.html` | glTF 模型加载版本（依赖 `assets/`） |
 | `assets/` | `bonsai.glb` 与 PBR 贴图（仅 glTF 版本使用） |
