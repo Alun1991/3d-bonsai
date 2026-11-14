@@ -7,7 +7,7 @@
      Netlify hosting facts for this site: static/SSR served via Netlify Edge. -->
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="color-scheme" content="light">
-<title>床の間 — 富士桜盆栽</title>
+<title>床の間 — 黒松盆栽</title>
 
 <!-- ============================================================= -->
 <!-- STYLE : SUMI / WASHI / THREE GREYS / ONE VERMILION            -->
@@ -66,7 +66,7 @@
   }
   .ritem:not(:last-child)::after{
     content:"";position:absolute;left:17px;right:17px;bottom:0;height:1px;
-    background:rgba(239,234,223,.22);
+    background:rgba(239,234,223,0);
   }
   .ritem .k{font-size:16.5px;line-height:1;letter-spacing:.02em;}
   .ritem .r{
@@ -100,11 +100,12 @@
     padding:0;
   }
   #panel.open{transform:translateX(0);}
-  #panel::before{ /* deckle edge, generated */
+  #panel::before{ /* deckle edge, generated. only exists while the panel is out */
     content:"";position:absolute;left:-9px;top:0;bottom:0;width:10px;
     background-repeat:repeat-y;background-position:right top;
-    pointer-events:none;
+    pointer-events:none;opacity:0;transition:opacity .4s var(--ease);
   }
+  #panel.open::before{opacity:1}
   #panelInner{
     flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
     overscroll-behavior:contain;
@@ -318,23 +319,13 @@
 
 <canvas id="gl"></canvas>
 
-<!-- vertical writing group -->
-<div id="tate" class="ui">
-  <div class="t">富士桜　床の間</div>
-  <div class="s">PRUNUS INCISA</div>
-</div>
-
-<div id="stat" class="ui"></div>
-
-<div id="guides"><div class="mark">撮</div></div>
-
 <div id="toast" class="ui"></div>
 
 <aside id="panel" class="ui"><div id="panelInner"></div></aside>
 
 <nav id="rail" class="ui" aria-label="操作"></nav>
 
-<div id="boot"><canvas id="bootc" width="400" height="400"></canvas><div id="bootw">墨　ひらく</div></div>
+<div id="boot"><canvas id="bootc" width="400" height="400"></canvas><div id="bootw"></div></div>
 <div id="fatal"></div>
 
 <script type="importmap">
@@ -348,7 +339,7 @@
 
 <script type="module">
 /* ============================================================================
-   床の間 — TOKONOMA / PRUNUS INCISA 'KOJO-NO-MAI'
+   床の間 — TOKONOMA / PINUS THUNBERGII 'BLACK PINE'
    A single-file macro diorama. Every mesh, texture, LUT and sound is generated
    in code. No external assets of any kind.
    ============================================================================ */
@@ -369,11 +360,11 @@ const MOBILE = COARSE || /Android|iPhone|iPad|iPod|Mobile/i.test(UA);
 const CFG = {
   mobile: MOBILE,
   // counts that the governor is forbidden to touch
-  blossoms:      MOBILE ? 3000 : 5200,   // richer flowers, so fewer of them
-  granules:      MOBILE ? 1100 : 2600,
+  blossoms:      MOBILE ? 3200 : 6800,   // needle sprays — density is what makes a black-pine pad read as a pad
+  granules:      MOBILE ? 700  : 1500,
   mossTufts:     MOBILE ? 900  : 2500,
   petalPool:     MOBILE ? 260  : 520,
-  newLeaves:     MOBILE ? 70   : 150,
+  newLeaves:     0,
   // quality dials the governor MAY walk
   renderScale:   MOBILE ? 0.78 : 1.30,
   renderScaleMin:MOBILE ? 0.55 : 0.70,
@@ -571,12 +562,12 @@ function buildBark(){
 
   // three base bark tones, blended by a large slow blotch field
   const t0 = [0,0,0], t1 = [0,0,0], t2 = [0,0,0], lich = [0,0,0], fis = [0,0,0], len = [0,0,0];
-  hexToLinear(0x6e6157, t0);   // grey-brown plate
-  hexToLinear(0x8a7a68, t1);   // sun-bleached
-  hexToLinear(0x4c4038, t2);   // damp shade
-  hexToLinear(0x93997e, lich); // pale lichen
-  hexToLinear(0x2b231d, fis);  // fissure floor
-  hexToLinear(0x3b2c22, len);  // lenticel
+  hexToLinear(0x5c4e42, t0);   // grey-brown scale plate
+  hexToLinear(0x87684d, t1);   // warm scale crest, catches the light
+  hexToLinear(0x342a20, t2);   // damp shade
+  hexToLinear(0x7d7a62, lich); // pale lichen
+  hexToLinear(0x1d1710, fis);  // furrow floor
+  hexToLinear(0x2c2118, len);  // lenticel
 
   for (let y=0;y<BARK_H;y++){
     const v = y/BARK_H;
@@ -584,16 +575,18 @@ function buildBark(){
       const u = x/BARK_W;
       const i = (y*BARK_W+x);
 
-      // --- axial fissures: long in v, narrow in u -------------------------
+      // --- pine bark: polygonal scales split by deep furrows --------------
       const fx = u*PU, fy = v*PV;
-      const warp  = (pfbm2(fx*1.1, fy*1.1, PU, PV, 3)-0.5)*0.55;
-      const ridge2 = pridge2(fx*2.0 + warp, fy*0.5 + warp*0.3, PU*2, 8, 4);
-      let fissure = Math.pow(sat((ridge2-0.34)/0.66), 2.1);      // 0 flat .. 1 deep
-      // secondary shallow cracking
-      const crack = Math.pow(sat(pridge2(fx*5.3+warp*2.0, fy*1.9, PU*5, PV*2, 3)-0.52)*2.2, 1.6);
-      fissure = sat(fissure*0.86 + crack*0.34);
+      const warp  = (pfbm2(fx*0.9, fy*0.9, PU, PV, 3)-0.5)*0.65;
+      const cell  = pworley(fx*3.0 + warp*3.0, fy*3.0 + warp*3.0, PU*3, PV*3);
+      let fissure = Math.pow(sat(1.0 - cell.edge/0.19), 1.7);   // 0 plate .. 1 furrow
+      // fine checking inside each scale
+      const crack = Math.pow(sat(pridge2(fx*6.5+warp*2.0, fy*2.6, PU*6, PV*3, 3)-0.55)*2.4, 1.7);
+      fissure = sat(fissure*0.90 + crack*0.22);
+      // each scale bulges slightly in its centre — a platelet, not a tile
+      const plate = sat(1.0 - cell.f1*1.25);
 
-      // --- lenticels: long in u, thin in v. the cherry signature ----------
+      // --- lenticels: nearly absent on old pine bark ----------------------
       const lu = u*PU*0.9, lv = v*PV*3.4;
       const lrow = Math.floor(lv + pfbm2(lu*0.7, v*PV*0.4, PU, PV, 2)*1.6);
       const jitter = hash2i(lrow*7|0, 3);
@@ -604,7 +597,7 @@ function buildBark(){
       const segPh = hash2i(seg+31|0, lrow+5|0);
       const halfW = 0.16 + segPh*0.19;
       const lent = segOn * sat(1.0 - dv/0.30) * sat(1.0 - Math.abs(((lu*2.6+hash2i(lrow,11)*9.0)%1.0)-0.5)/0.44);
-      const lenticel = Math.pow(lent, 1.5) * (1.0 - fissure*0.7) * (0.55 + 0.45*segPh) * halfW/0.25;
+      const lenticel = Math.pow(lent, 1.5) * (1.0 - fissure*0.7) * (0.55 + 0.45*segPh) * halfW/0.25 * 0.28;
 
       // --- blotch / lichen / weathering ----------------------------------
       const blot = pfbm2(fx*0.42, fy*0.32, PU, PV, 4);
@@ -636,8 +629,8 @@ function buildBark(){
       col[i*4+3] = 255;
 
       // --- data: R height, G roughness, B cavity AO, A moss affinity ------
-      const height = sat(1.0 - fissure*0.94 + lenticel*0.10 + (grit-0.5)*0.06);
-      const rough  = sat(0.62 + fissure*0.26 + lichm*0.14 - lenticel*0.10 + (grit-0.5)*0.12);
+      const height = sat(1.0 - fissure*0.94 + plate*0.12 + lenticel*0.10 + (grit-0.5)*0.06);
+      const rough  = sat(0.66 + fissure*0.22 + lichm*0.14 - lenticel*0.10 + (grit-0.5)*0.12);
       const cav    = sat(1.0 - fissure*0.80 - lichm*0.12);
       const mossA  = sat(fissure*1.15 - 0.15 + (pfbm2(fx*0.9+5.0, fy*0.7+2.0, PU, PV, 3)-0.5)*0.7);
       dat[i*4+0] = (height*255)|0;
@@ -2045,7 +2038,7 @@ function litDefines(extra){
 }
 
 /* ============================================================================
-   SECTION 05 — SKELETON: PRUNUS INCISA 'KOJO-NO-MAI', MOYOGI
+   SECTION 05 — SKELETON: PINUS THUNBERGII, MOYOGI
    Trunk changes direction four times, each turn tighter than the last. Roots
    break the soil and radiate. Caliper falls 11:1 from nebari to apex. Twigs
    kink at every node because that is what this cultivar does, and the kink is
@@ -2086,7 +2079,7 @@ function trunkRadius(t){
   // A nebari swells over several centimetres. Decaying it over ~15 mm makes a
   // thin flange that flares out and snaps back, which reads as a curled lip
   // rather than a root buttress.
-  const flare = 1.0 + 0.78 * Math.exp(-t * 16.0);
+  const flare = 1.0 + 0.95 * Math.exp(-t * 14.0);
   return r * flare;
 }
 
@@ -2262,8 +2255,8 @@ function buildTree(seed){
     for (let it=0; it<20; it++){
       const m = (lo+hi)*0.5;
       const px = ca*m + TREE_OFF_X, pz = sa*m + TREE_OFF_Z;
-      const f = Math.pow(Math.abs(px/(POT.A*0.855)), 4.4)
-              + Math.pow(Math.abs(pz/(POT.B*0.855)), 4.4);
+      const f = Math.pow(Math.abs(px/(POT.A*0.855)), 2.0)
+              + Math.pow(Math.abs(pz/(POT.B*0.855)), 2.0);
       if (f <= 1.0) lo = m; else hi = m;
     }
     return lo;
@@ -2464,7 +2457,7 @@ const BR_T = [0.213, 0.302, 0.378, 0.468, 0.546, 0.638, 0.722, 0.812, 0.900];
       c, dir, spine, spineLen, branch: bi,
       // rad:ey near 2:1. push it past 3:1 and every pad reads as a pancake.
       rad: (b.len*0.360*scale + 0.013) * sizeVar,
-      ey:  (0.0225 + 0.0175*(1.0-b.t)) * lerp(0.78, 1.30, R()),
+      ey:  (0.0210 + 0.0160*(1.0-b.t)) * lerp(0.82, 1.28, R()),   // foliage reads as round clumps, as in the reference
       ex:  (b.len*0.360*scale + 0.013) * sizeVar,
       ez:  (b.len*0.360*scale + 0.013) * sizeVar,
       phase: R.range(0, TAU),
@@ -2479,7 +2472,7 @@ const BR_T = [0.213, 0.302, 0.378, 0.468, 0.546, 0.638, 0.722, 0.812, 0.900];
     const c = apex.clone().add(new THREE.Vector3(0.004,0.010,0.004));
     const pad = { c, dir:new THREE.Vector3(0,1,0),
       spine:[c.clone().add(new THREE.Vector3(0,-0.012,0)), c.clone(), c.clone().add(new THREE.Vector3(0,0.012,0))],
-      spineLen:0.024, rad:0.050*R.range(0.88,1.22), ey:0.032*lerp(0.85,1.20,R()), ex:0.050*R.range(0.88,1.22), ez:0.050*R.range(0.88,1.22),
+      spineLen:0.024, rad:0.050*R.range(0.88,1.22), ey:0.024*lerp(0.85,1.20,R()), ex:0.050*R.range(0.88,1.22), ez:0.050*R.range(0.88,1.22),
       phase:R.range(0,TAU), lobeA:0.26,
       branch:-1, tips:[], budget:0 };
     TREE.pads.push(pad);
@@ -2835,14 +2828,14 @@ function compToWeight(c){
 const BARK_PU = 8, BARK_PV = 16;
 
 /* the exact expression the bark texture's height channel was baked from, so
-   CPU displacement and GPU shading agree on where a fissure is */
+   CPU displacement and GPU shading agree on where a furrow is */
 function barkFissure(u, v){
   const fx = u*BARK_PU, fy = v*BARK_PV;
-  const warp  = (pfbm2(fx*1.1, fy*1.1, BARK_PU, BARK_PV, 3)-0.5)*0.55;
-  const ridge2 = pridge2(fx*2.0 + warp, fy*0.5 + warp*0.3, BARK_PU*2, 8, 4);
-  let f = Math.pow(sat((ridge2-0.30)/0.70), 1.55);
-  const crack = Math.pow(sat(pridge2(fx*5.3+warp*2.0, fy*1.9, BARK_PU*5, BARK_PV*2, 3)-0.52)*2.2, 1.6);
-  return sat(f*0.86 + crack*0.34);
+  const warp  = (pfbm2(fx*0.9, fy*0.9, BARK_PU, BARK_PV, 3)-0.5)*0.65;
+  const cell  = pworley(fx*3.0 + warp*3.0, fy*3.0 + warp*3.0, BARK_PU*3, BARK_PV*3);
+  let f = Math.pow(sat(1.0 - cell.edge/0.19), 1.55);
+  const crack = Math.pow(sat(pridge2(fx*6.5+warp*2.0, fy*2.6, BARK_PU*6, BARK_PV*3, 3)-0.55)*2.4, 1.7);
+  return sat(f*0.90 + crack*0.22);
 }
 
 /* ---- spatial grid over strand starts, for crotch occlusion --------------- */
@@ -3308,115 +3301,38 @@ const PETAL_COLS = [-1.0, -0.60, 0.0, 0.60, 1.0];
 function petalCup(x, y){ return -(0.130*y*y + 0.300*x*x*y); }
 
 function buildFlowerGeometry(){
-  const pos=[], nrm=[], uv=[], az=[], rt=[], part=[], idx=[];
+  const pos=[], nrm=[], uv=[], idx=[];
   let base = 0;
-  const push = (x,y,z, nx,ny,nz, u,v, a, r, p) => {
+  const push = (x,y,z, nx,ny,nz, u,v) => {
     pos.push(x,y,z); nrm.push(nx,ny,nz); uv.push(u,v);
-    az.push(a); rt.push(r); part.push(p);
     return (pos.length/3)-1;
   };
 
-  /* ---- 5 petals. position holds PETAL-LOCAL (x,y,z); the vertex shader
-     rebuilds the world offset so the hinge angle can be animated. ---------- */
-  for (let k=0;k<5;k++){
-    const phi = k*(TAU/5) + 0.19;
-    base = pos.length/3;
-    for (let r=0;r<PETAL_ROWS.length;r++){
-      const R0 = PETAL_ROWS[r];
-      for (let c=0;c<PETAL_COLS.length;c++){
-        const xs = PETAL_COLS[c];
-        const x = xs*R0.hw;
-        // the notch is a dip at the midline only, easing out to the lobes
-        const y = R0.y + (R0.cy - R0.y)*Math.pow(1.0 - Math.abs(xs), 2.2);
-        const z = petalCup(x,y);
-        const dzdx = -0.600*x*y;
-        const dzdy = -(0.260*y + 0.300*x*x);
-        let nx=-dzdx, ny=-dzdy, nz=1.0;
-        const l=Math.hypot(nx,ny,nz); nx/=l; ny/=l; nz/=l;
-        push(x, y, z, nx, ny, nz, xs*0.5+0.5, R0.y, phi, R0.y, 0.0);
-      }
-    }
-    const NC = PETAL_COLS.length;
-    for (let r=0;r<PETAL_ROWS.length-1;r++) for (let c=0;c<NC-1;c++){
-      const a = base + r*NC + c, b = a+1, d = a+NC, e = a+NC+1;
-      idx.push(a,d,b, b,d,e);
-    }
-  }
-
-  /* ---- stamen boss: two crossed cards carrying 26 filaments -------------- */
+  /* ---- a pine needle spray. ~15 thin tapered blades fan upward and
+     outward from the shoot tip, tips arcing slightly down. One instance
+     is one mini-spray; a pad reads as dozens of them. ---------------------- */
   {
-    const H = 0.0072, W = 0.0052;
-    for (let q=0;q<2;q++){
-      const ang = q*Math.PI*0.5 + 0.42;
-      const sx=Math.cos(ang), sz=Math.sin(ang);
+    const R = makeRand(31415);
+    const NN = 22;
+    for (let k=0;k<NN;k++){
+      const az0 = (k/NN)*TAU + R.range(-0.35, 0.35);
+      const el  = R.range(0.25, 0.95);          // lean outward but stay up — pads, not sea urchins
+      const L   = R.range(0.62, 1.0)*0.0115;
+      const W   = 0.00052*(1.0+0.35*R());
+      const dx = Math.sin(el)*Math.cos(az0), dy = Math.cos(el), dz = Math.sin(el)*Math.sin(az0);
+      const sx = -Math.sin(az0), sz = Math.cos(az0);       // blade side vector
+      const droop = R.range(0.04, 0.28)*L;
+      const bx = dx*0.0011, by = 0.0003, bz = dz*0.0011;
+      const tx = bx + dx*L, ty = by + dy*L - droop, tz = bz + dz*L;
+      const tipW = W*0.10;
+      let nX = dz, nY = 0.55, nZ = -dx;                    // blade normal, biased skyward
+      const nl = Math.hypot(nX, nY, nZ); nX/=nl; nY/=nl; nZ/=nl;
       base = pos.length/3;
-      push(-sx*W, HYP_TOP,        -sz*W, 0,1,0, 0,0, 0,0, 1.0);
-      push( sx*W, HYP_TOP,         sz*W, 0,1,0, 1,0, 0,0, 1.0);
-      push(-sx*W, HYP_TOP+H,      -sz*W, 0,1,0, 0,1, 0,0, 1.0);
-      push( sx*W, HYP_TOP+H,       sz*W, 0,1,0, 1,1, 0,0, 1.0);
+      push(bx - sx*W,    by, bz - sz*W,    nX,nY,nZ, 0,0);
+      push(bx + sx*W,    by, bz + sz*W,    nX,nY,nZ, 1,0);
+      push(tx - sx*tipW, ty, tz - sz*tipW, nX,nY,nZ, 0,1);
+      push(tx + sx*tipW, ty, tz + sz*tipW, nX,nY,nZ, 1,1);
       idx.push(base,base+1,base+2, base+1,base+3,base+2);
-    }
-  }
-
-  /* ---- the boss seen down the axis: one quad facing the way the flower
-     faces, so looking into a cherry shows you a cherry ------------------- */
-  {
-    const SW = 0.0037, y = HYP_TOP + 0.0022;
-    base = pos.length/3;
-    push(-SW, y, -SW, 0,1,0, 0,0, 0,0, 4.0);
-    push( SW, y, -SW, 0,1,0, 1,0, 0,0, 4.0);
-    push(-SW, y,  SW, 0,1,0, 0,1, 0,0, 4.0);
-    push( SW, y,  SW, 0,1,0, 1,1, 0,0, 4.0);
-    idx.push(base,base+2,base+1, base+1,base+2,base+3);
-  }
-
-  /* ---- hypanthium: the urn. cherries have one and it reads. -------------- */
-  {
-    const SEG=6;
-    base = pos.length/3;
-    for (let r=0;r<2;r++){
-      const y = r===0 ? PED_LEN : HYP_TOP;
-      const rad = r===0 ? 0.00072 : HINGE_R;
-      for (let j=0;j<=SEG;j++){
-        const th=(j%SEG)/SEG*TAU;
-        const cx=Math.cos(th), cz=Math.sin(th);
-        push(cx*rad, y, cz*rad, cx, r===0?-0.35:0.30, cz, j/SEG, r, 0,0, 2.0);
-      }
-    }
-    for (let j=0;j<SEG;j++){
-      const a=base+j, b=a+1, c=base+SEG+1+j, d=c+1;
-      idx.push(a,c,b, b,c,d);
-    }
-  }
-
-  /* ---- 5 reflexed sepals ------------------------------------------------- */
-  for (let k=0;k<5;k++){
-    const phi = k*(TAU/5) + 0.19 + Math.PI/5;
-    const cx=Math.cos(phi), cz=Math.sin(phi);
-    const sx=-Math.sin(phi), sz=Math.cos(phi);
-    base = pos.length/3;
-    push(cx*HINGE_R*0.9 - sx*0.0010, HYP_TOP-0.0002, cz*HINGE_R*0.9 - sz*0.0010, cx,0.3,cz, 0,0, 0,0, 2.0);
-    push(cx*HINGE_R*0.9 + sx*0.0010, HYP_TOP-0.0002, cz*HINGE_R*0.9 + sz*0.0010, cx,0.3,cz, 1,0, 0,0, 2.0);
-    push(cx*HINGE_R*1.55, HYP_TOP-0.0040, cz*HINGE_R*1.55, cx,-0.5,cz, 0.5,1, 0,0, 2.0);
-    idx.push(base,base+2,base+1);
-  }
-
-  /* ---- pedicel ----------------------------------------------------------- */
-  {
-    const SEG=4;
-    base = pos.length/3;
-    for (let r=0;r<2;r++){
-      const y = r*PED_LEN;
-      const rad = 0.00042 - r*0.00006;
-      for (let j=0;j<=SEG;j++){
-        const th=(j%SEG)/SEG*TAU;
-        const cx=Math.cos(th), cz=Math.sin(th);
-        push(cx*rad, y, cz*rad, cx,0,cz, j/SEG, r, 0,0, 3.0);
-      }
-    }
-    for (let j=0;j<SEG;j++){
-      const a=base+j, b=a+1, c=base+SEG+1+j, d=c+1;
-      idx.push(a,c,b, b,c,d);
     }
   }
 
@@ -3424,11 +3340,8 @@ function buildFlowerGeometry(){
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos),3));
   g.setAttribute('normal',   new THREE.BufferAttribute(new Float32Array(nrm),3));
   g.setAttribute('uv',       new THREE.BufferAttribute(new Float32Array(uv),2));
-  g.setAttribute('aAz',      new THREE.BufferAttribute(new Float32Array(az),1));
-  g.setAttribute('aRT',      new THREE.BufferAttribute(new Float32Array(rt),1));
-  g.setAttribute('aPart',    new THREE.BufferAttribute(new Float32Array(part),1));
   g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx),1));
-  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, HYP_TOP*0.6, 0), 0.016);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.006, 0), 0.016);
   g.userData.tris = idx.length/3;
   g.userData.verts = pos.length/3;
   return g;
@@ -3440,44 +3353,22 @@ function buildFlowerGeometry(){
    input to the sway field is a world position. Nothing else.
    -------------------------------------------------------------------------- */
 const FLOWER_VERT_CORE = `
-attribute float aAz;
-attribute float aRT;
-attribute float aPart;
-attribute vec4  aFlower;   // hue, open, state, seed
+attribute vec4  aFlower;   // tone(new↔old needles), droop, unused, seed
 attribute float aFW;       // sway weight
-uniform float uPetalLen;
-uniform float uHingeR;
-uniform float uHypTop;
 
 void flowerVertex(out vec3 wp, out vec3 wn, out float rt, out float part, out vec4 fl){
   fl   = aFlower;
-  part = aPart;
-  rt   = aRT;
-  float state = fl.z;
-  float isBud   = step(0.5, state) * step(state, 1.5);
-  float isSpent = step(1.5, state);
+  part = 0.0;
+  rt   = uv.y;
 
   vec3 lp = position;
   vec3 ln = normal;
 
-  if (aPart < 0.5){
-    float open = clamp(fl.y, 0.0, 1.25);
-    float ang  = mix(0.13, 1.62, open);
-    float ca = cos(ang), sa = sin(ang);
-    vec3  Rr = vec3(cos(aAz), 0.0, sin(aAz));
-    vec3  Sv = vec3(-sin(aAz), 0.0, cos(aAz));
-    vec3  Dv = Rr*sa + vec3(0.0, 1.0, 0.0)*ca;
-    vec3  Nv = cross(Sv, Dv);
-    float lenS = mix(1.0, 0.56, isBud) * mix(1.0, 0.94, isSpent);
-    float wid  = mix(1.0, 0.72, isBud);
-    // buds curl the petal margins inward around the axis
-    float curl = isBud * 0.42;
-    vec3 pl = vec3(lp.x*wid, lp.y, lp.z + curl*abs(lp.x)*lp.y*1.4);
-    vec3 hinge = Rr*uHingeR + vec3(0.0, uHypTop, 0.0);
-    float L = uPetalLen * lenS;
-    lp = hinge + Dv*(pl.y*L) + Sv*(pl.x*L) + Nv*(pl.z*L);
-    ln = normalize(Sv*ln.x + Dv*ln.y + Nv*ln.z);
-  }
+  // per-spray character: size jitter, a slight outward spread, and droop
+  float s = 0.85 + 0.30*fl.w;
+  lp.xz *= 1.0 + fl.y*0.35;
+  lp *= s;
+  lp.y -= fl.y*0.20*length(lp.xz);
 
   // per-instance uniform scale + orientation live in instanceMatrix
   vec4 ip = instanceMatrix * vec4(lp, 1.0);
@@ -3488,11 +3379,11 @@ void flowerVertex(out vec3 wp, out vec3 wn, out float rt, out float part, out ve
   wn = normalize(mat3(modelMatrix) * normalize(im * ln));
 
   wp = wp4.xyz;
-  // rigid: the whole flower rides its twig tip exactly
+  // rigid: the whole spray rides its twig tip exactly
   wp += breathField(anchor, aFW);
-  // and the petals alone quiver a little, zero at the pedicel
-  float flut = breathPulse(wp) * aFW * aRT * step(aPart, 0.5);
-  wp += wn * flut * 0.0011;
+  // needle tips alone quiver a little
+  float flut = breathPulse(wp) * aFW * uv.y;
+  wp += wn * flut * 0.0007;
 }
 `;
 
@@ -3515,14 +3406,9 @@ void main(){
 `;
 
 const FLOWER_FRAG = GL.LIT_PARS + `
-uniform sampler2D uPetalTex;
-uniform sampler2D uStamenTex;
-uniform sampler2D uStamenTop;
-uniform vec3 uPetalWhite;
-uniform vec3 uPetalPink;
-uniform vec3 uPetalDeep;
-uniform vec3 uSpentCol;
-uniform vec3 uCalyxCol;
+uniform vec3 uNeedleBase;
+uniform vec3 uNeedleTip;
+uniform vec3 uNeedleYoung;
 varying vec3 vWorld;
 varying vec3 vNrm;
 varying vec2 vUv;
@@ -3535,60 +3421,17 @@ void main(){
   vec3 N = normalize(vNrm);
   if (!gl_FrontFacing) N = -N;
   vec3 V = normalize(cameraPosition - vWorld);
-  vec3 alb; float rough = 0.55, trans = 0.0, ao = 1.0, spec = 1.0;
-  vec3 tint = vec3(1.0);
-  float state = vFlower.z;
-  float isSpent = step(1.5, state);
-  float isBud   = step(0.5, state) * step(state, 1.5);
 
-  if (vPart < 0.5){
-    vec4 pt = texture2D(uPetalTex, vUv);
-    float hue = vFlower.x;
-    vec3 base = mix(uPetalWhite, uPetalPink, pow(clamp(hue,0.0,1.0), 1.55));
-    base = mix(base, uPetalDeep, smoothstep(0.86, 1.0, hue));
-    // pink concentrates at the claw and on the reverse, exactly as it does
-    // on kojo-no-mai, and the margins go almost pure white
-    float blush = pt.b * mix(0.72, 1.0, hue);
-    alb = mix(base, uPetalDeep, blush*0.70);
-    alb = mix(alb, uPetalWhite, smoothstep(0.38, 1.0, vRT)*0.34);
-    if (!gl_FrontFacing) alb = mix(alb, uPetalDeep, 0.30);
-    alb *= (0.94 + 0.10*pt.a);
-    // the veins are pink and they fan out of the claw — a white petal with no
-    // vein colour is a paper cut-out
-    alb = mix(alb, uPetalDeep, pt.r*0.30*(1.0 - vRT*0.55));
-    alb = mix(alb, uPetalDeep*1.06, isBud*0.55);
-    // spent: browning creeps in from the margin
-    float brown = isSpent * smoothstep(0.10, 0.95, vRT + pt.a*0.35);
-    alb = mix(alb, uSpentCol, brown*0.88);
-    rough = mix(0.34, 0.62, pt.a) + isSpent*0.24;
-    trans = (0.34 + 0.66*pt.g) * mix(1.0, 0.34, isSpent) * mix(1.0, 0.45, isBud);
-    tint  = vec3(1.0, 0.415, 0.455);
-    spec  = 1.6;
-    ao = mix(0.78, 1.0, smoothstep(0.0, 0.5, vRT));
-  } else if (vPart < 1.5){
-    vec4 st = texture2D(uStamenTex, vUv);
-    if (st.a < 0.42) discard;
-    alb = srgb2lin_(st.rgb);
-    alb = mix(alb, alb*vec3(0.85,0.62,0.52), isSpent*0.8);
-    // anthers are waxy and they are the one thing in the flower that glints
-    rough = 0.34; trans = 0.62; tint = vec3(1.0,0.40,0.42); spec = 1.9;
-  } else if (vPart < 2.5){
-    alb = uCalyxCol * (0.80 + 0.40*vUv.y);
-    alb = mix(alb, uCalyxCol*vec3(1.55,0.70,0.52), 0.55);
-    rough = 0.48; trans = 0.35; tint = vec3(1.0,0.55,0.35); spec = 1.1;
-  } else if (vPart < 3.5){
-    alb = uCalyxCol * vec3(0.92, 0.86, 0.70) * 0.8;
-    rough = 0.55; trans = 0.20; tint = vec3(1.0,0.55,0.35);
-  } else {
-    vec4 sb = texture2D(uStamenTop, vUv);
-    if (sb.a < 0.34) discard;
-    alb = srgb2lin_(sb.rgb);
-    alb = mix(alb, alb*vec3(0.82,0.58,0.50), isSpent*0.85);
-    rough = 0.32; trans = 0.58; tint = vec3(1.0,0.38,0.42); spec = 2.0;
-    N = normalize(mix(N, normalize(vWorld - cameraPosition) * -1.0, 0.35));
-  }
+  // dark olive at the fascicle, yellow-green toward the needle tip, and the
+  // current year's growth a touch brighter than last year's
+  float t = clamp(vRT, 0.0, 1.0);
+  vec3 alb = mix(uNeedleBase, uNeedleTip, smoothstep(0.15, 1.0, t));
+  alb = mix(alb, uNeedleYoung, smoothstep(0.68, 1.0, vFlower.x)*0.50);
+  // the spray is densest at its heart — fake a little self-shadow
+  alb *= 0.72 + 0.38*t;
+  float rough = 0.86 - 0.10*t;
 
-  vec3 col = shadeSurface(vWorld, N, V, alb, rough, 0.0, ao, 1.0, trans, tint, spec, 1.0);
+  vec3 col = shadeSurface(vWorld, N, V, alb, rough, 0.0, 0.92, 1.0, 0.0, vec3(1.0), 0.7, 1.0);
   gl_FragColor = vec4(col, vDist);
 }
 `;
@@ -3604,8 +3447,6 @@ void main(){
 }
 `;
 const FLOWER_DEPTH_FRAG = GL.COMMON + `
-uniform sampler2D uStamenTex;
-uniform sampler2D uStamenTop;
 varying vec2 vUv;
 varying float vPart;
 vec4 packD_(float v){
@@ -3615,11 +3456,6 @@ vec4 packD_(float v){
   return enc;
 }
 void main(){
-  if (vPart > 0.5 && vPart < 1.5){
-    if (texture2D(uStamenTex, vUv).a < 0.42) discard;
-  } else if (vPart > 3.5){
-    if (texture2D(uStamenTop, vUv).a < 0.34) discard;
-  }
   gl_FragColor = packD_(gl_FragCoord.z);
 }
 `;
@@ -3649,22 +3485,19 @@ function buildBlossoms(){
   let nBud=0, nSpent=0;
   for (let i=0;i<count;i++){
     const s = sites[order[i]];
+    // the spray's +Y axis points along the shoot's outward/upward direction
+    // stored with the site, so needles never hang their faces at the soil
     q.setFromUnitVectors(up, s.dir);
     q2.setFromAxisAngle(s.dir, R.range(0,TAU));
     q.premultiply(q2);
-    const scale = R.range(0.72, 1.20) * (s.order >= 5 ? 1.0 : 0.90);
+    const scale = R.range(0.70, 1.30);
     sc.set(scale, scale, scale);
     m.compose(s.pos, q, sc);
     mesh.setMatrixAt(i, m);
 
-    const r = R();
-    let state = 0.0, open;
-    if (r < 0.042){ state = 2.0; open = R.range(1.02, 1.20); nSpent++; }
-    else if (r < 0.205){ state = 1.0; open = R.range(0.0, 0.16); nBud++; }
-    else { state = 0.0; open = R.range(0.58, 1.0); }
-    flowerAttr[i*4+0] = Math.pow(R(), 0.92);          // white through pale pink
-    flowerAttr[i*4+1] = open;
-    flowerAttr[i*4+2] = state;
+    flowerAttr[i*4+0] = R();                              // this year / last year tone
+    flowerAttr[i*4+1] = Math.pow(R(), 1.6)*0.85;          // droop bias: mostly perky
+    flowerAttr[i*4+2] = 0.0;
     flowerAttr[i*4+3] = R();
     wAttr[i] = s.w;
   }
@@ -3673,17 +3506,9 @@ function buildBlossoms(){
   g.setAttribute('aFW',     new THREE.InstancedBufferAttribute(wAttr,1));
 
   const uni = litUniforms({
-    uPetalTex:  { value: TEX.petal },
-    uStamenTex: { value: TEX.stamen },
-    uStamenTop: { value: TEX.stamenTop },
-    uPetalWhite:{ value: new THREE.Vector3(0.815, 0.780, 0.772) },
-    uPetalPink: { value: new THREE.Vector3(0.820, 0.470, 0.532) },
-    uPetalDeep: { value: new THREE.Vector3(0.735, 0.240, 0.352) },
-    uSpentCol:  { value: new THREE.Vector3(0.320, 0.232, 0.176) },
-    uCalyxCol:  { value: new THREE.Vector3(0.108, 0.086, 0.046) },
-    uPetalLen:  { value: PETAL_LEN },
-    uHingeR:    { value: HINGE_R },
-    uHypTop:    { value: HYP_TOP }
+    uNeedleBase: { value: new THREE.Vector3(0.013, 0.042, 0.009) },
+    uNeedleTip:  { value: new THREE.Vector3(0.052, 0.112, 0.028) },
+    uNeedleYoung:{ value: new THREE.Vector3(0.105, 0.170, 0.048) }
   });
   mesh.material = new THREE.ShaderMaterial({
     uniforms: uni,
@@ -3696,9 +3521,7 @@ function buildBlossoms(){
   });
   mesh.userData.depthMaterial = new THREE.ShaderMaterial({
     uniforms: {
-      uTime: LU.uTime, uBreath: LU.uBreath,
-      uPetalLen: uni.uPetalLen, uHingeR: uni.uHingeR, uHypTop: uni.uHypTop,
-      uStamenTex: uni.uStamenTex, uStamenTop: uni.uStamenTop
+      uTime: LU.uTime, uBreath: LU.uBreath
     },
     vertexShader: FLOWER_DEPTH_VERT,
     fragmentShader: FLOWER_DEPTH_FRAG,
@@ -3839,7 +3662,7 @@ void main(){
    wire that actually anchors the tree. Soil is instanced akadama and pumice.
    ========================================================================= */
 
-const POT = { A:0.1755, B:0.1180, H:0.0580, FOOT:0.0132, SOIL_Y:0.0475 };
+const POT = { A:0.1700, B:0.1700, H:0.0920, FOOT:0.0120, SOIL_Y:0.0830 };
 /* the tree is not planted in the middle of the pot. it never is. */
 const TREE_OFF_X = -0.0295, TREE_OFF_Z = 0.0155;
 
@@ -4114,22 +3937,22 @@ function superEllipse(th, n, out){
 /* profile: [ scale, y, pool, unglazed, sharp ] walked once around the section */
 const POT_PROFILE = [
   [0.000, 0.0000, 0.95, 1.0, 1],   // underside centre
-  [0.760, 0.0000, 0.80, 1.0, 0],
-  [0.815, 0.0000, 0.65, 1.0, 1],   // foot ring outer edge
-  [0.828, 0.0072, 0.55, 0.75, 1],
-  [0.868, 0.0118, 0.30, 0.15, 0],
-  [0.930, 0.0196, 0.14, 0.0,  0],
-  [0.972, 0.0316, 0.05, 0.0,  0],
-  [0.995, 0.0442, 0.06, 0.0,  0],
-  [0.986, 0.0492, 0.34, 0.0,  1],  // undercut below the lip
-  [1.000, 0.0528, 0.10, 0.0,  1],  // lip flare
-  [1.000, 0.0578, 0.00, 0.0,  1],  // lip top outer
-  [0.958, 0.0580, 0.22, 0.0,  1],  // lip top inner
-  [0.944, 0.0512, 0.55, 0.0,  0],  // inner wall
-  [0.918, 0.0300, 0.72, 0.0,  0],
-  [0.892, 0.0166, 0.90, 0.0,  1],  // inner floor fillet
-  [0.700, 0.0128, 0.95, 0.0,  0],
-  [0.000, 0.0122, 0.98, 0.0,  0]   // inner floor centre
+  [0.680, 0.0000, 0.80, 1.0, 0],
+  [0.735, 0.0000, 0.65, 1.0, 1],   // foot ring outer edge
+  [0.760, 0.0114, 0.55, 0.75, 1],
+  [0.810, 0.0187, 0.30, 0.15, 0],
+  [0.880, 0.0311, 0.14, 0.0,  0],
+  [0.940, 0.0501, 0.05, 0.0,  0],
+  [0.978, 0.0701, 0.06, 0.0,  0],
+  [0.992, 0.0780, 0.34, 0.0,  1],  // undercut below the lip
+  [1.000, 0.0837, 0.10, 0.0,  1],  // lip flare
+  [1.000, 0.0917, 0.00, 0.0,  1],  // lip top outer
+  [0.958, 0.0920, 0.22, 0.0,  1],  // lip top inner
+  [0.944, 0.0812, 0.55, 0.0,  0],  // inner wall
+  [0.918, 0.0476, 0.72, 0.0,  0],
+  [0.892, 0.0263, 0.90, 0.0,  1],  // inner floor fillet
+  [0.700, 0.0203, 0.95, 0.0,  0],
+  [0.000, 0.0194, 0.98, 0.0,  0]   // inner floor centre
 ];
 
 function buildPot(){
@@ -4140,7 +3963,7 @@ function buildPot(){
     const P = POT_PROFILE[k];
     for (let j=0;j<=SEG;j++){
       const th = (j%SEG)/SEG*TAU;
-      superEllipse(th, 4.4, se);
+      superEllipse(th, 2.0, se);
       const x = se[0]*POT.A*P[0];
       const z = se[1]*POT.B*P[0];
       pos.push(x, P[1], z);
@@ -4179,9 +4002,9 @@ function buildPot(){
   g.computeBoundingSphere();
 
   const mat = makeStdMaterial('GLAZE', {
-    map: TEX.glaze, rough: 0.135, twoSided: true,
-    tint:  new THREE.Vector3(0.398, 0.446, 0.378),   // thin celadon, cream-green
-    tint2: new THREE.Vector3(0.152, 0.258, 0.216),   // pooled, deep blue-green
+    map: TEX.glaze, rough: 0.28, twoSided: true,
+    tint:  new THREE.Vector3(0.450, 0.185, 0.105),   // warm terracotta clay body
+    tint2: new THREE.Vector3(0.210, 0.080, 0.040),   // pooled rim shadows
     uvx: 1.0, uvy: 1.0, aoStrength: 0.9
   });
   const mesh = new THREE.Mesh(g, mat);
@@ -4191,41 +4014,44 @@ function buildPot(){
 }
 
 function buildPotFeet(){
+  /* a round bowl stands on a foot ring, not four corner blocks */
   const pos=[],nrm=[],uv=[],ex=[],idx=[];
-  const fx = POT.A*0.60, fz = POT.B*0.56;
-  const w = 0.0250, d = 0.0180, h = POT.FOOT;
-  const corners = [[-1,-1],[1,-1],[-1,1],[1,1]];
-  for (let c=0;c<4;c++){
-    const cxp = corners[c][0]*fx, czp = corners[c][1]*fz;
-    const base = pos.length/3;
-    // a slightly tapered block with a chamfered bottom edge
-    const lv = [
-      [-w, 0, -d],[ w, 0, -d],[ w, 0, d],[-w, 0, d],
-      [-w*0.86,-h*0.80,-d*0.86],[ w*0.86,-h*0.80,-d*0.86],[ w*0.86,-h*0.80,d*0.86],[-w*0.86,-h*0.80,d*0.86],
-      [-w*0.70,-h,-d*0.70],[ w*0.70,-h,-d*0.70],[ w*0.70,-h,d*0.70],[-w*0.70,-h,d*0.70]
-    ];
-    for (let i=0;i<lv.length;i++){
-      pos.push(cxp+lv[i][0], lv[i][1], czp+lv[i][2]);
-      uv.push((lv[i][0]/w)*0.5+0.5, (lv[i][1]/h));
-      ex.push(0.62 + 0.38*sat(1.0+lv[i][1]/h), 0.55, 0.0, 1.0);
+  const SEG = 84, h = POT.FOOT;
+  // profile pairs: [radiusFactor, y, extra.R]
+  const prof = [
+    [0.600, -h,   0.62],   // ring bottom outer
+    [0.625, 0.0,  0.62],   // ring top outer (meets the bowl underside)
+    [0.545, 0.0,  0.50],   // ring top inner
+    [0.560, -h,   0.50]    // ring bottom inner
+  ];
+  const start = [];
+  for (let k=0;k<prof.length;k++){
+    start.push(pos.length/3);
+    for (let j=0;j<=SEG;j++){
+      const th=(j%SEG)/SEG*TAU;
+      const r = POT.A*prof[k][0];
+      pos.push(Math.cos(th)*r, prof[k][1], Math.sin(th)*r);
+      uv.push(j/SEG*5.0, k*0.5);
+      ex.push(prof[k][2], 0.55, 0.0, 1.0);
       nrm.push(0,0,0);
     }
-    // wound outward: the -Z face's normal must point -Z, not into the block
-    const q=(a,b,c2,d2)=>{ idx.push(base+a,base+c2,base+b, base+a,base+d2,base+c2); };
-    q(0,4,5,1); q(1,5,6,2); q(2,6,7,3); q(3,7,4,0);
-    q(4,8,9,5); q(5,9,10,6); q(6,10,11,7); q(7,11,8,4);
-    q(8,11,10,9);
+  }
+  for (let k=0;k<3;k++){
+    const A=start[k], B=start[k+1];
+    for (let j=0;j<SEG;j++){
+      idx.push(A+j, A+j+1, B+j,  A+j+1, B+j+1, B+j);
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos),3));
   g.setAttribute('uv',       new THREE.BufferAttribute(new Float32Array(uv),2));
   g.setAttribute('aExtra',   new THREE.BufferAttribute(new Float32Array(ex),4));
-  g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx),1));
+  g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx),1));
   g.computeVertexNormals();
   const mat = makeStdMaterial('GLAZE', {
-    map: TEX.glaze, rough: 0.30,
-    tint:  new THREE.Vector3(0.400, 0.442, 0.386),
-    tint2: new THREE.Vector3(0.190, 0.282, 0.240),
+    map: TEX.glaze, rough: 0.32, twoSided: true,
+    tint:  new THREE.Vector3(0.430, 0.178, 0.100),
+    tint2: new THREE.Vector3(0.200, 0.078, 0.040),
     aoStrength: 1.0
   });
   const m = new THREE.Mesh(g, mat);
@@ -4272,8 +4098,8 @@ function buildDrainage(){
 function soilHeight(x, z){
   const rr = Math.hypot(x/(POT.A*0.90), z/(POT.B*0.90));
   const dome = Math.cos(sat(rr)*Math.PI*0.5);
-  return POT.SOIL_Y + dome*0.0075 - Math.pow(sat(rr),3.0)*0.0045
-       + (fbm3(x*38, 3.3, z*38, 3)-0.5)*0.0032;
+  return POT.SOIL_Y + Math.pow(dome, 1.35)*0.0340 - Math.pow(sat(rr),3.0)*0.0030
+       + (fbm3(x*38, 3.3, z*38, 3)-0.5)*0.0035;
 }
 function inSoil(x,z){ return (x/(POT.A*0.935))**2 + (z/(POT.B*0.935))**2 < 1.0; }
 
@@ -4286,7 +4112,7 @@ function buildSoilBed(){
     for (let i=0;i<=NX;i++){
       const u=i/NX;
       // polar-ish grid matching the superellipse rim
-      const th=u*TAU; superEllipse(th, 4.4, se);
+      const th=u*TAU; superEllipse(th, 2.0, se);
       const rr=v;
       const x=se[0]*POT.A*0.938*rr, z=se[1]*POT.B*0.938*rr;
       const y=soilHeight(x,z) - (1.0-rr)*0.0;
@@ -4315,7 +4141,7 @@ function buildSoilBed(){
   const mat = makeStdMaterial('SOIL', {
     map: TEX.soil, rough: 0.88,
     tint:  new THREE.Vector3(0.72,0.66,0.60),
-    tint2: new THREE.Vector3(0.088,0.150,0.058),
+    tint2: new THREE.Vector3(0.205,0.305,0.100),
     uvx:1.0, uvy:1.0, aoStrength: 0.85
   });
   const m = new THREE.Mesh(g, mat);
@@ -4355,7 +4181,7 @@ function buildGranules(){
   while (placed < N && guard < N*14){
     guard++;
     const th=R.range(0,TAU), rr=Math.sqrt(R());
-    const se=[0,0]; superEllipse(th,4.4,se);
+    const se=[0,0]; superEllipse(th,2.0,se);
     const x=se[0]*POT.A*0.928*rr, z=se[1]*POT.B*0.928*rr;
     if (!inSoil(x,z)) continue;
     // keep clear of the trunk footprint
@@ -4520,6 +4346,7 @@ function buildTieWire(){
 
 const ALCOVE = { x0:-0.70, x1:0.58, z0:ROOM.z0, z1:-0.10, y:0.135 };
 const SHOKU  = { x:0.13, z:-0.34, w:0.215, d:0.150, h:0.115 };
+const PED    = { x:0.13, z:-0.22, w:0.56, d:0.36 };   // studio pedestal half-extents
 const SCROLL_POS = { x:-0.30, w:0.30, y0:0.34, y1:1.62, z:ROOM.z0+0.008 };
 const KUSA   = { x:-0.34, z:-0.14 };
 const POT_Y  = ALCOVE.y + SHOKU.h;              // 0.250
@@ -4586,9 +4413,128 @@ function mergeGeos(list){
 }
 
 /* --------------------------------------------------------------------------
+   STONES — smooth river boulders bedded in the moss. The reference shows a
+   family of pale round stones ringing the mound, with one or two angular
+   greys for contrast and a scatter of pebbles at the rim.
+   -------------------------------------------------------------------------- */
+function buildStones(){
+  const R = makeRand(90917);
+  const parts = [];
+  const addStone = (cx, cz, rad, squash, rot, rough) => {
+    const geo = new THREE.IcosahedronGeometry(1.0, rough ? 1 : 3);
+    const p = geo.attributes.position;
+    for (let i=0;i<p.count;i++){
+      const x=p.getX(i), y=p.getY(i), z=p.getZ(i);
+      const l = Math.hypot(x,y,z) || 1;
+      const nz = fbm3(x*1.9+7.3, y*1.9+2.1, z*1.9+4.7, 3) - 0.5;
+      const r = 1.0 + nz*(rough ? 0.34 : 0.10);
+      p.setXYZ(i, x/l*r, y/l*r, z/l*r);
+    }
+    geo.computeVertexNormals();
+    const sy = rad*squash;
+    const m4 = new THREE.Matrix4();
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), rot);
+    m4.compose(
+      new THREE.Vector3(cx, soilHeight(cx,cz) + sy*0.32, cz),
+      q, new THREE.Vector3(rad, sy, rad*R.range(0.86, 1.14)));
+    geo.applyMatrix4(m4);
+    setExtra(geo, (v,n,i,o)=>{ o[0]=sat(0.45 + n.y*0.45); o[1]=0.45; o[2]=0.0; o[3]=1.0; });
+    parts.push(geo);
+  };
+
+  // the ring of rounded stones, skipping the root zone
+  const spots = [
+    [ -0.088,  0.030, 0.040, 0.72],   // big, left
+    [ -0.052,  0.088, 0.034, 0.62],   // front-left hero
+    [  0.082,  0.052, 0.028, 0.66],   // right
+    [  0.096, -0.048, 0.032, 0.70],   // right-back
+    [ -0.104, -0.042, 0.026, 0.64],   // left-back
+    [  0.030,  0.104, 0.024, 0.58],   // front
+    [ -0.020, -0.112, 0.022, 0.62],   // back
+    [  0.118,  0.008, 0.020, 0.60]    // far right rim
+  ];
+  for (const [x,z,rad,sq] of spots){
+    if (Math.hypot(x-TREE_OFF_X, z-TREE_OFF_Z) < 0.052) continue;
+    addStone(x, z, rad*R.range(0.92,1.08), sq*R.range(0.94,1.06), R.range(0,TAU), false);
+  }
+  // two angular greys, tucked low between the rounds
+  addStone(-0.070, 0.058, 0.019, 0.52, R.range(0,TAU), true);
+  addStone(-0.046, 0.044, 0.014, 0.48, R.range(0,TAU), true);
+  // a pebble skirt where the moss meets the rim
+  for (let i=0;i<14;i++){
+    const th = R.range(0, TAU);
+    const rr = R.range(0.128, 0.140);
+    const x = Math.cos(th)*rr, z = Math.sin(th)*rr*(POT.B/POT.A);
+    addStone(x, z, R.range(0.006, 0.011), 0.55, R.range(0,TAU), false);
+  }
+
+  const merge = mergeGeos(parts);
+  const mat = makeStdMaterial('CLAY', {
+    map: TEX.clay, rough: 0.54,
+    tint: new THREE.Vector3(0.610, 0.598, 0.565), uvx: 2.4, uvy: 2.4, aoStrength: 0.65
+  });
+  const m = new THREE.Mesh(merge, mat);
+  m.userData.depthMaterial = staticDepthMaterial(false);
+  m.name = 'stones';
+  return m;
+}
+
+/* --------------------------------------------------------------------------
    ROOM SHELL
    -------------------------------------------------------------------------- */
 function buildRoom(){
+  const G = new THREE.Group();
+  const W = ROOM.x1-ROOM.x0, D = ROOM.z1-ROOM.z0, H = ROOM.y1-ROOM.y0;
+  const cx=(ROOM.x0+ROOM.x1)*0.5, cz=(ROOM.z0+ROOM.z1)*0.5, cy=(ROOM.y0+ROOM.y1)*0.5;
+
+  /* --- CI: clean studio. A plain warm-grey sweep and one heavy table.
+     No tokonoma, no scroll, no text — the tree is the whole picture. ----- */
+  const back = new THREE.Mesh(
+    xform(planeGeo(W*2.6, H*2.0, 1, 1, 1.0), cx, cy*1.15, ROOM.z0-0.06, 0, 0, 0),
+    makeStdMaterial('CLAY', {
+      map: TEX.clay, rough: 0.96,
+      tint: new THREE.Vector3(0.700, 0.678, 0.640), uvx:0.20, uvy:0.20, aoStrength: 0.30
+    }));
+  back.name='backdrop'; back.userData.depthMaterial = staticDepthMaterial(false);
+  back.userData.noShadow = true;
+  G.add(back);
+
+  // side return so the wide angles never see past the backdrop
+  const sideW = new THREE.Mesh(
+    xform(planeGeo(D*2.4, H*2.0, 1, 1, 0.94), ROOM.x1+0.55, cy*1.15, cz, 0, -Math.PI*0.5, 0),
+    makeStdMaterial('CLAY', {
+      map: TEX.clay, rough: 0.96,
+      tint: new THREE.Vector3(0.660, 0.640, 0.604), uvx:0.20, uvy:0.20, aoStrength: 0.30
+    }));
+  sideW.name='backdropSide'; sideW.userData.depthMaterial = staticDepthMaterial(false);
+  sideW.userData.noShadow = true;
+  G.add(sideW);
+
+  // the pedestal: one neutral slab, wide and low, so the pot and shadow carry it
+  const ped = new THREE.Mesh(
+    xform(boxGeo(PED.w*2.0, POT_Y, PED.d*2.0, 5.0, 0.9), PED.x, POT_Y*0.5, PED.z),
+    makeStdMaterial('CLAY', {
+      map: TEX.clay, rough: 0.60,
+      tint: new THREE.Vector3(0.505, 0.492, 0.462), uvx:1.3, uvy:1.3, aoStrength: 0.55
+    }));
+  ped.name='pedestal'; ped.userData.depthMaterial = staticDepthMaterial(false);
+  G.add(ped);
+
+  // the floor: same clean plaster, a touch darker than the wall
+  const fl = new THREE.Mesh(
+    xform(planeGeo(W*1.8, D*2.0, 1, 1, 0.9), cx, 0.0005, cz+0.12, -Math.PI*0.5, 0, 0),
+    makeStdMaterial('CLAY', {
+      map: TEX.clay, rough: 0.92,
+      tint: new THREE.Vector3(0.560, 0.545, 0.515), uvx:0.28, uvy:0.28, aoStrength: 0.30
+    }));
+  fl.name='studioFloor'; fl.userData.depthMaterial = staticDepthMaterial(false);
+  fl.userData.noShadow = true;
+  G.add(fl);
+
+  return G;
+}
+
+function buildRoomLegacy(){
   const G = new THREE.Group();
   const W = ROOM.x1-ROOM.x0, D = ROOM.z1-ROOM.z0, H = ROOM.y1-ROOM.y0;
   const cx=(ROOM.x0+ROOM.x1)*0.5, cz=(ROOM.z0+ROOM.z1)*0.5, cy=(ROOM.y0+ROOM.y1)*0.5;
@@ -4923,29 +4869,16 @@ function buildRoom(){
 const PETAL_STATE = { FREE:0, FALLING:1, LANDED:2 };
 
 function buildPetalPool(){
-  /* one petal, 3x4 grid, cupped and notched — the same silhouette as the ones
-     still on the tree so a fallen petal is recognisably the same object */
+  /* one fallen needle: a thin curved blade with a tapered end. At the size it
+     lands it reads as a pine needle, matching the sprays still on the tree. */
   const pos=[],nrm=[],uv=[],idx=[];
-  const L = PETAL_LEN;
-  for (let r=0;r<PETAL_ROWS.length;r++){
-    const R0=PETAL_ROWS[r];
-    for (let c=0;c<PETAL_COLS.length;c++){
-      const xs=PETAL_COLS[c];
-      const x=xs*R0.hw;
-      const y=R0.y + (R0.cy - R0.y)*Math.pow(1.0-Math.abs(xs), 2.2);
-      const z=petalCup(x,y)*0.42;   // a petal on the ground has relaxed open
-      const dzdx=-0.600*x*y*0.42, dzdy=-(0.260*y+0.300*x*x)*0.42;
-      let nx=-dzdx, ny=-dzdy, nz=1.0;
-      const l=Math.hypot(nx,ny,nz);
-      pos.push(x*L, (y-0.42)*L, z*L);
-      nrm.push(nx/l, ny/l, nz/l);
-      uv.push(xs*0.5+0.5, R0.y);
-    }
-  }
-  const NC = PETAL_COLS.length;
-  for (let r=0;r<PETAL_ROWS.length-1;r++) for (let c=0;c<NC-1;c++){
-    const a=r*NC+c, b=a+1, d=a+NC, e=a+NC+1;
-    idx.push(a,d,b, b,d,e);
+  const L = 0.0125, W = 0.00060;
+  {
+    pos.push(-W, 0, 0,          W, 0, 0,
+             -W*0.22, L, -0.0012,  W*0.16, L*0.94, -0.0016);
+    nrm.push(0,1,0, 0,1,0, 0,1,0, 0,1,0);
+    uv.push(0,0, 1,0, 0.5,1, 0.5,0.95);
+    idx.push(0,2,1, 1,2,3);
   }
 
   const N = CFG.petalPool;
@@ -4974,31 +4907,28 @@ void main(){
   gl_Position = projectionMatrix * mv;
 }`;
   const frag = GL.LIT_PARS + `
-uniform sampler2D uPetalTex;
 uniform vec3 uPetalWhite; uniform vec3 uPetalPink; uniform vec3 uSpentCol;
 varying vec3 vWorld; varying vec3 vNrm; varying vec2 vUv; varying vec4 vP; varying float vDist;
 void main(){
   vec3 N = normalize(vNrm);
   if (!gl_FrontFacing) N = -N;
   vec3 V = normalize(cameraPosition - vWorld);
-  vec4 pt = texture2D(uPetalTex, vUv);
-  vec3 base = mix(uPetalWhite, uPetalPink, pow(clamp(vP.x,0.0,1.0), 1.55));
-  vec3 alb = mix(base, uPetalPink*0.9, pt.b*0.40);
-  // a petal on the soil browns and dulls over the minutes it lies there
+  vec3 base = mix(uPetalWhite, uPetalPink, clamp(vP.x, 0.0, 1.0));
+  vec3 alb = base * (0.85 + 0.30*vUv.y);
+  // a needle on the soil browns and dulls over the minutes it lies there
   float age = clamp(vP.y, 0.0, 1.0);
-  alb = mix(alb, uSpentCol, age*0.74);
-  float rough = mix(0.44, 0.82, age) + pt.a*0.14;
+  alb = mix(alb, uSpentCol, age*0.72);
+  float rough = mix(0.60, 0.88, age);
   vec3 col = shadeSurface(vWorld, N, V, alb, rough, 0.0, 1.0, 1.0,
-                          pt.g*(1.0-age*0.6), vec3(1.0,0.42,0.46), 1.05, 1.0);
+                          0.0, vec3(1.0), 0.9, 1.0);
   gl_FragColor = vec4(col, vDist);
 }`;
   mesh.material = new THREE.ShaderMaterial({
     uniforms: litUniforms({
-      uPetalTex:  { value: TEX.petal },
-      // a shed petal is not a fresh one: duller, warmer, and on its way out
-      uPetalWhite:{ value: new THREE.Vector3(0.615,0.578,0.556) },
-      uPetalPink: { value: new THREE.Vector3(0.735,0.452,0.492) },
-      uSpentCol:  { value: new THREE.Vector3(0.262,0.196,0.150) }
+      // green while fresh, straw-brown as it dries on the soil
+      uPetalWhite:{ value: new THREE.Vector3(0.028, 0.062, 0.014) },
+      uPetalPink: { value: new THREE.Vector3(0.060, 0.080, 0.020) },
+      uSpentCol:  { value: new THREE.Vector3(0.150, 0.100, 0.042) }
     }),
     defines: litDefines(),
     vertexShader: vert, fragmentShader: frag,
@@ -5035,16 +4965,15 @@ function landingHeight(x, z){
   // pot local coordinates
   const lx = x - POT_CENTER.x, lz = z - POT_CENTER.z;
   if (Math.abs(lx) < POT.A*1.02 && Math.abs(lz) < POT.B*1.02){
-    const se = Math.pow(Math.abs(lx/POT.A), 4.4) + Math.pow(Math.abs(lz/POT.B), 4.4);
+    const se = Math.pow(Math.abs(lx/POT.A), 2.0) + Math.pow(Math.abs(lz/POT.B), 2.0);
     if (se <= 1.0){
       if (inSoil(lx, lz)) return POT_Y + POT.FOOT + soilHeight(lx,lz) + 0.0006;
       return POT_Y + POT.FOOT + POT.H + 0.0006;               // the rim
     }
   }
-  const sx = x - SHOKU.x, sz = z - SHOKU.z;
-  if (Math.abs(sx) < SHOKU.w && Math.abs(sz) < SHOKU.d) return POT_Y + 0.0006;
-  if (z < ALCOVE.z1 && x > ALCOVE.x0 && x < ALCOVE.x1) return ALCOVE.y + 0.0006;
-  return 0.0006;
+  const sx = x - PED.x, sz = z - PED.z;
+  if (Math.abs(sx) < PED.w && Math.abs(sz) < PED.d) return POT_Y + 0.0006;   // the pedestal top
+  return 0.0006;                                                             // the studio floor
 }
 
 function seedFallenPetals(P, sceneTime){
@@ -5650,15 +5579,15 @@ function createPost(renderer){
    ========================================================================= */
 
 const RIG = {
-  target:   new THREE.Vector3(0.150, 0.508, -0.372),
-  targetTo: new THREE.Vector3(0.150, 0.508, -0.372),
+  target:   new THREE.Vector3(0.150, 0.462, -0.372),
+  targetTo: new THREE.Vector3(0.150, 0.462, -0.372),
   az: 0.650, azTo: 0.650,
-  el: 0.120, elTo: 0.120,
-  r:  2.000, rTo: 2.000,
+  el: 0.135, elTo: 0.135,
+  r:  2.24, rTo: 2.24,
   AZ: [-1.16, 1.16],
   EL: [-0.20, 0.66],
-  R:  [0.40, 2.00],
-  focus: 2.00, focusTo: 2.00, focusManual: false,
+  R:  [0.40, 2.24],
+  focus: 2.24, focusTo: 2.24, focusManual: false,
   fnum: 5.0, fnumTo: 5.0,
   focal: 90.0,
   drift: 0, idle: 0, driftPhase: 0,
@@ -5906,7 +5835,7 @@ function seqBuild(){
           crosses the frame while you are in there. */
     { dur:12.5, ease:'smooth',
       to:{ az:0.58, el:0.150, r:0.44, tx:p3.x, ty:p3.y, tz:p3.z, focus:0.44, fnum:2.8 },
-      enter(){ SEQ.savedFall = APP.fallRate; APP.fallRate = 1.15; } },
+      enter(){ SEQ.savedFall = APP.fallRate; APP.fallRate = 0.45; } },
 
     /* 5. With the lens on, the camera holds and only the plane moves — a rack
           from the pad in front to the branches behind it. With it off that
@@ -6251,7 +6180,7 @@ const RAIL_ITEMS = [
   { id:'hikari', k:'光', r:'hikari' },
   { id:'kei',    k:'景', r:'kei'    },
   { id:'kaze',   k:'風', r:'kaze'   },
-  { id:'hana',   k:'花', r:'hana'   },
+  { id:'hana',   k:'葉', r:'ha'   },
   { id:'oto',    k:'音', r:'oto'    },
   { id:'satsu',  k:'撮', r:'satsu'  }
 ];
@@ -6360,7 +6289,7 @@ function buildPanel(id, APP){
     hikari:['光','hikari','露出は測光から解いている。'],
     kei:   ['景','kei',   '九十粍。絞りは被写界深度に効く。切ることもできる。'],
     kaze:  ['風','kaze',  '室内の空気。天気ではない。'],
-    hana:  ['花','hana',  '富士桜。葉より先に咲く。'],
+    hana:  ['葉','ha',  '黒松。針は四季を保つ。'],
     oto:   ['音','oto',   '楽音と室内音、水琴窟、風鈴。']
   }[id];
   head.appendChild(el('span','k', meta[0]));
@@ -6407,9 +6336,9 @@ function buildPanel(id, APP){
     f.appendChild(el('div','pnote','幹は動かない。枝先だけが数ミリ揺れる。'));
   }
   if (id === 'hana'){
-    f.appendChild(mkSlider('落','petal fall', 0.0, 1.8, APP.fallRate,
+    f.appendChild(mkSlider('落','needle fall', 0.0, 1.8, APP.fallRate,
       x=>x.toFixed(2)+' /s', x=>{ APP.fallRate=x; }).node);
-    f.appendChild(mkAction('掃','sweep the fallen petals', ()=>APP.sweepPetals()).node);
+    f.appendChild(mkAction('掃','sweep the fallen needles', ()=>APP.sweepPetals()).node);
     const s = el('div','pnote');
     s.id = 'hanaCount';
     f.appendChild(s);
@@ -6424,9 +6353,6 @@ function buildPanel(id, APP){
     f.appendChild(el('div','pnote','水琴窟は不規則に落ち、風鈴は風が満ちたときだけ鳴る。'));
   }
 
-  const foot = el('div','pfoot');
-  foot.innerHTML = 'PRUNUS INCISA &nbsp;·&nbsp; KOJO-NO-MAI<br>MOYOGI &nbsp;·&nbsp; H 45 CM';
-  f.appendChild(foot);
   return f;
 }
 
@@ -6440,8 +6366,6 @@ function buildUI(APP){
     b.setAttribute('aria-label', it.r);
     b.setAttribute('aria-expanded','false');
     b.appendChild(el('span','tick'));
-    b.appendChild(el('span','k', it.k));
-    b.appendChild(el('span','r', it.r));
     b.addEventListener('click', ()=>{
       if (it.id === 'satsu'){ APP.setPhoto(!UI.photo); return; }
       openPanel(it.id === UI.open ? null : it.id, APP);
@@ -6453,11 +6377,11 @@ function buildUI(APP){
   function openPanel(id, A){
     UI.open = id;
     UI.items.forEach(x=>x.node.setAttribute('aria-expanded', String(x.id===id)));
-    if (!id){ UI.panel.classList.remove('open'); document.getElementById('stat').classList.remove('show'); return; }
+    if (!id){ UI.panel.classList.remove('open'); const st=document.getElementById('stat'); if(st) st.classList.remove('show'); return; }
     UI.inner.innerHTML = '';
     UI.inner.appendChild(buildPanel(id, A));
     UI.panel.classList.add('open');
-    document.getElementById('stat').classList.add('show');
+    const st=document.getElementById('stat'); if(st) st.classList.add('show');
   }
   UI.openPanel = openPanel;
 
@@ -6645,7 +6569,7 @@ const APP = {
   renderer:null, scene:null, shadowScene:null, camera:null, lightCam:null,
   post:null, tree:null, petals:null, blossoms:null, room:null,
   presetIdx: 1, fade:null, evTrim: 0.0, ambTrim: 1.0, shadowSoft: 1.0,
-  grain: 0.030, fallRate: 0.34, fallAcc: 0,
+  grain: 0.030, fallRate: 0.10, fallAcc: 0,
   lanternForce: null,
   t: 0, last: 0, frames: 0, dtHist: new Float32Array(48), dtIdx: 0,
   qLevel: 0, govCool: 0, govBad: 0, govGood: 0, dpr: 1, cssW: 1, cssH: 1,
@@ -6784,9 +6708,9 @@ APP.setDof = function(on){
 };
 APP.resetView = function(){
   seqInterrupt();
-  RIG.azTo = 0.650; RIG.elTo = 0.120; RIG.rTo = 2.000;
-  RIG.targetTo.set(0.150, 0.508, -0.372);
-  RIG.focusTo = 2.00; RIG.focusManual = false; RIG.rack = null; RIG.idle = 0;
+  RIG.azTo = 0.650; RIG.elTo = 0.135; RIG.rTo = 2.24;
+  RIG.targetTo.set(0.150, 0.462, -0.372);
+  RIG.focusTo = 2.24; RIG.focusManual = false; RIG.rack = null; RIG.idle = 0;
   RIG.fnumTo = 5.0;
 };
 APP.sweepPetals = function(){
@@ -6867,7 +6791,7 @@ function stepFrame(dt){
   }
 
   seqUpdate(dt);
-  rigUpdate(APP.camera, dt, !UI.open && !SEQ.active);
+  rigUpdate(APP.camera, dt, false);
   APP.post.U.lens.value.set(RIG.focal, RIG.fnum, RIG.focus, SENSOR_H);
   // a real iris: round wide open, hexagonal stopped down
   APP.post.mDofGather.uniforms.uIris.value.z = smooth(2.9, 7.5, RIG.fnum);
@@ -6967,8 +6891,7 @@ function updateStat(){
     APP.post.size.x+'×'+APP.post.size.y+' &nbsp; SHADOW '+CFG.shadowRes+' &nbsp; Q'+APP.qLevel+'<br>'+
     optics;
   const hc = document.getElementById('hanaCount');
-  if (hc) hc.textContent = TREE.stats.blossoms+' 花　'+TREE.stats.buds+' 蕾　'+
-    P.landed+' 落花　'+TREE.stats.leaves+' 葉';
+  if (hc) hc.textContent = '針簇 '+TREE.stats.blossoms+'　'+P.landed+' 落針';
 }
 
 /* --------------------------------------------------------------------------
@@ -7055,6 +6978,7 @@ function assemble(canvas, renderer){
   steps.push(()=>{
     APP.potGroup.add(buildMossTufts());
     APP.potGroup.add(buildTieWire());
+    APP.potGroup.add(buildStones());
     APP.potGroup.updateMatrixWorld(true);
   });
   steps.push(()=>{
@@ -7132,11 +7056,7 @@ function boot(){
     stroke.done();
     APP.ready = true;
     APP.last = 0;
-    // the piece introduces itself. anything you touch takes it back.
-    setTimeout(()=>{ if (!IS_NODE) seqStart(); }, 1100);
-    setTimeout(()=>{
-      APP.toast('序 jo  ·  drag at any time to take over', 5600);
-    }, 2100);
+    // the scene opens still: no auto sequence, no idle drift until touched
     requestAnimationFrame(frame);
   }
   window.addEventListener('resize', ()=>APP.resize(false));
