@@ -1,21 +1,38 @@
-# 黒松盆栽 · Black Pine Bonsai Diorama
+# 3D Bonsai · 黒松与富士桜
 
 仿作，原版出处在这里：https://x.com/majidmanzarpour/status/2081103577590718865
 
-一盆黒松（Pinus thunbergii）摆在干净的摄影棚里——全部由代码生成：虬曲盘干、鳞片树皮、云片针叶、苔藓土丘、圆卵石、红陶浅盆，没有一个外部模型资产。单 HTML 文件，依赖仅 CDN 上的 three.js。
+两个可独立观看的盆景场景，全部由代码生成。单 HTML 文件，依赖仅 CDN 上的 three.js。
 
-**在线预览：** [黒松（当前版）](https://alun1991.github.io/3d-bonsai/) · [富士桜（原版）](https://alun1991.github.io/3d-bonsai/sakura.html)
+## 黒松 · Black Pine
 
-![hero](docs/hero.jpg)
+一盆黒松（Pinus thunbergii）摆在干净的摄影棚里：虬曲盘干、鳞片树皮、云片针叶、苔藓土丘、圆卵石、红陶浅盆。
 
-## 细节
+**[在线预览黒松 →](https://alun1991.github.io/3d-bonsai/)**
+
+![黑松盆景](docs/hero.jpg)
+
+### 黒松细节
 
 | | |
 |---|---|
 | ![macro](docs/macro.jpg) | ![nebari](docs/nebari.jpg) |
 | 针叶簇成团，条条针叶逐一建模 | 龟甲鳞片树皮，树根扎进苔藓土丘 |
 
-## 交互
+## 富士桜 · Sakura
+
+原来的富士桜（Prunus incisa 'Kojo-no-mai'）场景仍完整保留：树干、五瓣樱花、苔藓、花盆和床の間光影均由代码生成。可拖拽环绕、滚轮缩放，并通过右侧菜单调整光照、景深、风和落花。
+
+**[在线预览富士桜 →](https://alun1991.github.io/3d-bonsai/sakura.html)**
+
+![富士桜盆景](docs/sakura-hero.jpg)
+
+| | |
+|---|---|
+| ![樱花细节](docs/sakura-macro.jpg) | ![树根与苔藓细节](docs/sakura-nebari.jpg) |
+| 五瓣樱花与花蕊逐一建模 | 树根扎进苔藓土丘，落花铺在盆面 |
+
+## 黒松交互
 
 - **拖拽** 环绕、**滚轮** 缩放、**单击** 对焦（静止构图，无自动运镜）
 - 右侧菜单（仅显示墨点，打开后可见选项）：
@@ -35,7 +52,8 @@
 ```bash
 cd 3d-bonsai
 python3 -m http.server 5173
-# 打开 http://localhost:5173/index.html
+# 黒松：http://localhost:5173/index.html
+# 富士桜：http://localhost:5173/sakura.html
 ```
 
 ## 文件说明
@@ -49,7 +67,7 @@ python3 -m http.server 5173
 | `assets/` | `bonsai.glb` 与 PBR 贴图（仅 glTF 版本使用） |
 | `blender/build_bonsai.py` | Blender 场景生成脚本 |
 
-## 技术要点
+## 黒松技术要点
 
 - 树干/根系为参数化扫掠管体，UV 按管面展开，树皮为噪声烘焙的可平铺鳞片/颜色贴图（Worley 龟裂）
 - 针叶簇是真实几何：每簇 26 根细长锥形针叶从枝端放射上扬，逐簇摆动
